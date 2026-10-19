@@ -1,0 +1,12 @@
+# El repo Clue versiona solo la app (ClueClient/). La investigacion,
+# informes, backups y herramientas de este workspace quedan locales.
+/*
+!/.gitignore
+!/.gitmodules
+!/README.md
+!/ClueClient/
+
+# router.cfg guarda las claves Wi-Fi en claro
+hardware/puppis-s1/backups/
+# snapshots con SSID/BSSID/serie del router
+hardware/puppis-s1/snapshots/
