@@ -113,6 +113,7 @@ public class PreferenceConfiguration {
     public static final int FRAME_PACING_BALANCED = 1;
     public static final int FRAME_PACING_CAP_FPS = 2;
     public static final int FRAME_PACING_MAX_SMOOTHNESS = 3;
+    public static final int FRAME_PACING_CLUE = 4; // CLUE: adaptive vsync presenter (H2)
 
     public static final String RES_360P = "640x360";
     public static final String RES_480P = "854x480";
@@ -368,6 +369,17 @@ public class PreferenceConfiguration {
             changed = true;
         }
 
+        // CLUE: move installs still on the old balanced default to the Clue presenter, once.
+        // An explicit choice of any other pacing mode is kept.
+        if (!prefs.getBoolean("clue_pacing_v2", false)) {
+            String pacing = prefs.getString(FRAME_PACING_PREF_STRING, null);
+            if (pacing == null || pacing.equals("balanced")) {
+                editor.putString(FRAME_PACING_PREF_STRING, com.clue.defaults.ClueDefaults.FRAME_PACING);
+            }
+            editor.putBoolean("clue_pacing_v2", true);
+            changed = true;
+        }
+
         if (changed) {
             editor.apply();
         }
@@ -423,6 +435,9 @@ public class PreferenceConfiguration {
         }
         else if (str.equals("cap-fps")) {
             return FRAME_PACING_CAP_FPS;
+        }
+        else if (str.equals("clue")) { // CLUE
+            return FRAME_PACING_CLUE;
         }
         else if (str.equals("smoothness")) {
             return FRAME_PACING_MAX_SMOOTHNESS;

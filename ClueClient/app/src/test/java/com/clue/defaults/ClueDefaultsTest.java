@@ -16,7 +16,7 @@ public class ClueDefaultsTest {
     public void referenceDefaults() {
         assertEquals("120", ClueDefaults.FPS);
         assertEquals(80000, ClueDefaults.BITRATE_KBPS);
-        assertEquals("balanced", ClueDefaults.FRAME_PACING);
+        assertEquals("clue", ClueDefaults.FRAME_PACING);
         assertTrue(ClueDefaults.PERF_OVERLAY);
     }
 }
