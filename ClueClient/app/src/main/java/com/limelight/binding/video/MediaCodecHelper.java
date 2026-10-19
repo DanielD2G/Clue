@@ -505,7 +505,11 @@ public class MediaCodecHelper {
 
             // If this decoder officially supports FEATURE_LowLatency, we will just use that alone
             // for try 0. Otherwise, we'll include it as best effort with other options.
-            if (decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
+            //
+            // CLUE: on Qualcomm, FEATURE_LowLatency alone leaves the decoder at its default clock
+            // (algo.rate 30); keep going so try 0 also carries operating-rate and the qti keys.
+            if (decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME)) &&
+                    !isDecoderInList(qualcommDecoderPrefixes, decoderInfo.getName())) {
                 return true;
             }
         }
