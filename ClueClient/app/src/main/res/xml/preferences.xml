@@ -284,4 +284,13 @@
             android:summary="@string/summary_privacy_policy"
             url="https://moonlight-stream.org/privacy.html"/>
     </PreferenceCategory-->
+    <!-- CLUE: attribution required by GPL-3.0 and by the fork rules -->
+    <PreferenceCategory android:title="Clue"
+        android:key="category_clue_about">
+        <com.limelight.preferences.WebLauncherPreference
+            android:key="clue_about"
+            android:title="Acerca de Clue"
+            android:summary="Clue 0.1.0, basado en Moonlight 12.2 (GPL-3.0). github.com/DanielD2G/Clue · github.com/moonlight-stream/moonlight-android"
+            url="https://github.com/DanielD2G/Clue"/>
+    </PreferenceCategory>
 </PreferenceScreen>

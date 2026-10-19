@@ -1,7 +1,25 @@
 apply plugin: 'com.android.application'
 
+// CLUE: release signing comes from an untracked keystore.properties (see docs/BUILD.md).
+def clueKeystoreProps = new Properties()
+def clueKeystoreFile = rootProject.file('keystore.properties')
+if (clueKeystoreFile.exists()) {
+    clueKeystoreFile.withInputStream { clueKeystoreProps.load(it) }
+}
+
 android {
     ndkVersion "29.0.14206865"
+
+    signingConfigs {
+        if (clueKeystoreFile.exists()) {
+            release {
+                storeFile rootProject.file(clueKeystoreProps['storeFile'])
+                storePassword clueKeystoreProps['storePassword']
+                keyAlias clueKeystoreProps['keyAlias']
+                keyPassword clueKeystoreProps['keyPassword']
+            }
+        }
+    }
 
     compileSdk 37
 
@@ -11,8 +29,8 @@ android {
         minSdk 21
         targetSdk 36
 
-        versionName "12.2"
-        versionCode = 315
+        versionName "0.1.0"
+        versionCode = 1
 
         // Generate native debug symbols to allow Google Play to symbolicate our native crashes
         ndk.debugSymbolLevel = 'FULL'
@@ -37,7 +55,7 @@ android {
                 }
             }
 
-            applicationId "com.limelight.root"
+            applicationId "com.clue.client.root"
             dimension "root"
             buildConfigField "boolean", "ROOT_BUILD", "true"
         }
@@ -49,7 +67,7 @@ android {
                 }
             }
 
-            applicationId "com.limelight"
+            applicationId "com.clue.client"
             dimension "root"
             buildConfigField "boolean", "ROOT_BUILD", "false"
         }
@@ -84,8 +102,8 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
-            resValue "string", "app_label", "Moonlight (Debug)"
-            resValue "string", "app_label_root", "Moonlight (Root Debug)"
+            resValue "string", "app_label", "Clue (Debug)"
+            resValue "string", "app_label_root", "Clue (Root Debug)"
         }
         release {
             // To whomever is releasing/using an APK in release mode with
@@ -118,9 +136,13 @@ android {
             // is to please change the applicationId before you publish.
             //
             // TL;DR: Leave the following line alone!
-            applicationIdSuffix ".unofficial"
-            resValue "string", "app_label", "Moonlight"
-            resValue "string", "app_label_root", "Moonlight (Root)"
+            // CLUE: applicationId changed to com.clue.client as requested above, so no ".unofficial" suffix is needed.
+            resValue "string", "app_label", "Clue"
+            resValue "string", "app_label_root", "Clue (Root)"
+
+            if (clueKeystoreFile.exists()) {
+                signingConfig signingConfigs.release
+            }
 
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

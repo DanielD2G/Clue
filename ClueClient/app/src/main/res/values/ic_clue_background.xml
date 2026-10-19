@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CLUE: launcher icon background -->
+    <color name="ic_clue_background">#0F1720</color>
+</resources>
