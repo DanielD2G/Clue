@@ -1,23 +1,30 @@
 package com.clue.video;
 
 /**
- * Chooses the vsync each decoded frame is released against, with an adaptive buffer of 0 or 1 frame.
+ * Chooses the vsync each decoded frame is released against.
  *
- * Depth 0 targets the first vsync whose deadline is still reachable (lowest latency). When arrivals
- * crowd the deadline edge, which is what the host/panel clock beat does periodically, depth 1 targets
- * one vsync later so arrival jitter cannot alternate repeats and drops.
+ * Per-frame arrival times jitter by a millisecond or two, so choosing a vsync from each frame's own
+ * arrival makes frames near a deadline alternate between two vsyncs (repeat, then drop). Instead a
+ * phase-locked estimate of when frames should arrive (the host cadence) plus a robust lateness margin
+ * gives a smooth "virtual arrival", and frame N+1 keeps the vsync after frame N's unless that virtual
+ * arrival crosses a deadline:
+ *  - later: immediately, otherwise late frames would miss the latch;
+ *  - earlier: only past a hysteresis band, which happens once per host/panel clock beat and costs one
+ *    dropped frame instead of a run of alternations.
+ *
+ * Targets sit half a period before the expected presentation time, because SurfaceFlinger latches a
+ * buffer only when its desired present time is not after the vsync's expected present time.
  *
  * onVsync() runs on the vsync thread and targetFor() on the renderer thread; the vsync snapshot is
- * shared through a seqlock. Nothing here allocates after construction.
+ * shared through a seqlock. Nothing here allocates.
  */
 public final class PresentPolicy {
     public static final long DEFAULT_SAFETY_NS = 1_000_000L;
-    public static final long DEFAULT_GUARD_NS = 1_500_000L;
-    public static final int ENTER_WINDOW = 120, ENTER_EDGES = 12;
-    public static final int EXIT_WINDOW = 240;
+    public static final long DEFAULT_HYSTERESIS_NS = 500_000L;
+    static final long INITIAL_MARGIN_NS = 2_000_000L;
 
     private final long safetyNs;
-    private final long guardNs;
+    private final long hysteresisNs;
 
     // Vsync snapshot, written by onVsync() under the seqlock.
     private volatile long seq;
@@ -26,19 +33,17 @@ public final class PresentPolicy {
     private volatile long periodNs;
 
     // Renderer-thread state.
-    private final boolean[] edges = new boolean[EXIT_WINDOW];
-    private int edgeHead;       // index of the next slot to write
-    private int samples;        // frames recorded, capped at EXIT_WINDOW
-    private int edgesEnter;     // edges among the last ENTER_WINDOW frames
-    private int edgesExit;      // edges among the last EXIT_WINDOW frames
-    private int depth;
+    private long lastArrivalNs;
+    private long sourcePeriodNs;
+    private long predictedArrivalNs;
+    private long lastDeadlineNs;
     private long lastTarget;
-    private volatile long depthSwitches;
-    private volatile int edgesInWindowSnapshot;
+    private volatile long marginNs = INITIAL_MARGIN_NS;
+    private volatile long remaps;
 
-    public PresentPolicy(long safetyNs, long guardNs) {
+    public PresentPolicy(long safetyNs, long hysteresisNs) {
         this.safetyNs = safetyNs;
-        this.guardNs = guardNs;
+        this.hysteresisNs = hysteresisNs;
     }
 
     public void onVsync(long deadlineNs, long expectedPresentNs, long periodNs) {
@@ -52,6 +57,7 @@ public final class PresentPolicy {
         seq = s + 2;
     }
 
+    /** Returns the presentation time for releaseOutputBuffer, or 0 before the first vsync. */
     public long targetFor(long nowNs) {
         long d0, p0, period, s;
         do {
@@ -65,13 +71,25 @@ public final class PresentPolicy {
             return 0;
         }
 
-        long ahead = nowNs + safetyNs - d0;
-        long k = ahead > 0 ? (ahead + period - 1) / period : 0;
-        long slack = d0 + k * period - nowNs - safetyNs;
+        trackArrival(nowNs, period);
+        long virtualArrival = predictedArrivalNs + marginNs + safetyNs;
 
-        recordEdge(slack < guardNs || (slack > period - guardNs && slack < period));
+        long ahead = virtualArrival - d0;
+        long candidate = d0 + (ahead > 0 ? (ahead + period - 1) / period : 0) * period;
 
-        long target = p0 + (k + depth) * period;
+        long chosen = candidate;
+        if (lastDeadlineNs != 0) {
+            long step = Math.max(1, (sourcePeriodNs + period / 2) / period) * period;
+            long expected = lastDeadlineNs + step;
+            if (virtualArrival <= expected && virtualArrival > expected - period - hysteresisNs) {
+                chosen = expected;
+            } else {
+                remaps++;
+            }
+        }
+        lastDeadlineNs = chosen;
+
+        long target = p0 + (chosen - d0) - period / 2;
         if (target < lastTarget) {
             target = lastTarget;
         }
@@ -79,57 +97,54 @@ public final class PresentPolicy {
         return target;
     }
 
-    private void recordEdge(boolean edge) {
-        if (samples >= ENTER_WINDOW) {
-            int leavingEnter = (edgeHead - ENTER_WINDOW + EXIT_WINDOW) % EXIT_WINDOW;
-            if (edges[leavingEnter]) {
-                edgesEnter--;
+    private void trackArrival(long nowNs, long vsyncPeriodNs) {
+        long dt = nowNs - lastArrivalNs;
+        if (lastArrivalNs == 0 || dt <= 0 || (sourcePeriodNs > 0 && dt > 4 * sourcePeriodNs)) {
+            // First frame or a pause: restart from this arrival
+            predictedArrivalNs = nowNs;
+            marginNs = INITIAL_MARGIN_NS;
+            lastDeadlineNs = 0;
+        } else {
+            if (sourcePeriodNs == 0) {
+                // Start from the nearest whole number of vsyncs: one interval carries a frame of
+                // jitter, while streams run at (almost exactly) a multiple of the panel rate.
+                sourcePeriodNs = Math.max(1, (dt + vsyncPeriodNs / 2) / vsyncPeriodNs) * vsyncPeriodNs;
             }
-        }
-        if (samples >= EXIT_WINDOW && edges[edgeHead]) {
-            edgesExit--;
-        }
-        edges[edgeHead] = edge;
-        if (edge) {
-            edgesEnter++;
-            edgesExit++;
-        }
-        edgeHead = (edgeHead + 1) % EXIT_WINDOW;
-        if (samples < EXIT_WINDOW) {
-            samples++;
-        }
-        edgesInWindowSnapshot = edgesEnter;
+            // Second-order PLL: the arrival error corrects both phase and frequency, so a wrong
+            // initial period (the first interval carries one frame of jitter) leaves no steady bias.
+            predictedArrivalNs += sourcePeriodNs;
+            long err = nowNs - predictedArrivalNs;
+            predictedArrivalNs += err / 16;
+            sourcePeriodNs += err / 256;
 
-        if (depth == 0 && edgesEnter >= ENTER_EDGES) {
-            depth = 1;
-            depthSwitches++;
-        } else if (depth == 1 && samples >= EXIT_WINDOW && edgesExit == 0) {
-            depth = 0;
-            depthSwitches++;
+            long margin = marginNs;
+            if (err > margin) {
+                margin += (err - margin) / 4;
+            } else {
+                margin -= margin / 512;
+            }
+            marginNs = margin;
         }
+        lastArrivalNs = nowNs;
     }
 
-    public int depth() {
-        return depth;
+    /** Current lateness margin added to the predicted arrival, for the overlay. */
+    public long marginNs() {
+        return marginNs;
     }
 
-    public int edgesInWindow() {
-        return edgesInWindowSnapshot;
+    /** Times the frame-to-vsync mapping moved (each one costs one repeat or one drop). */
+    public long remaps() {
+        return remaps;
     }
 
-    public long depthSwitches() {
-        return depthSwitches;
-    }
-
-    /** Clears the buffer decision and the last target; keeps the vsync snapshot. */
+    /** Forgets the cadence and the last target; keeps the vsync snapshot. */
     public void reset() {
-        java.util.Arrays.fill(edges, false);
-        edgeHead = 0;
-        samples = 0;
-        edgesEnter = 0;
-        edgesExit = 0;
-        depth = 0;
+        lastArrivalNs = 0;
+        sourcePeriodNs = 0;
+        predictedArrivalNs = 0;
+        lastDeadlineNs = 0;
         lastTarget = 0;
-        edgesInWindowSnapshot = 0;
+        marginNs = 0;
     }
 }

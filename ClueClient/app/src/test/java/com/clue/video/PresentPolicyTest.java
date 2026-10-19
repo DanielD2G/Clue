@@ -7,88 +7,98 @@ import org.junit.Test;
 
 public class PresentPolicyTest {
     private static final long T = 8_333_333L;
+    private static final long HALF = T / 2;
     private static final long D0 = 100_000_000L;
     private static final long P0 = 110_000_000L;
 
     private static PresentPolicy newPolicy() {
-        return new PresentPolicy(1_000_000L, 1_500_000L);
-    }
-
-    private static long clean(int i) {
-        return D0 + i * T - 5_000_000L;
-    }
-
-    private static long edge(int i) {
-        return D0 + i * T - 1_200_000L;
-    }
-
-    /** Drives 120 frames with one edge arrival every 10 frames; returns the next frame index. */
-    private static int driveToDepth1(PresentPolicy p) {
+        PresentPolicy p = new PresentPolicy(1_000_000L, 500_000L);
         p.onVsync(D0, P0, T);
-        for (int i = 0; i < 120; i++) {
-            p.targetFor(i % 10 == 9 ? edge(i) : clean(i));
-        }
-        return 120;
+        return p;
+    }
+
+    /** Deterministic jitter in [-1.2, +1.2] ms. */
+    private static long jitter(int i) {
+        long[] pattern = {0, 1_200_000L, -900_000L, 600_000L, -1_200_000L, 300_000L, 900_000L, -600_000L};
+        return pattern[i % pattern.length];
     }
 
     @Test
     public void noVsyncReturnsZero() {
-        assertEquals(0, newPolicy().targetFor(5));
+        assertEquals(0, new PresentPolicy(1_000_000L, 500_000L).targetFor(5));
     }
 
     @Test
-    public void picksNextAchievableTimeline() {
-        PresentPolicy p = newPolicy();
-        p.onVsync(D0, P0, T);
-        assertEquals(P0, p.targetFor(95_000_000L));
-        assertEquals(P0 + T, p.targetFor(99_500_000L));
+    public void firstFrameTargetsNextReachableVsyncHalfPeriodEarly() {
+        assertEquals(P0 - HALF, newPolicy().targetFor(95_000_000L));
     }
 
     @Test
-    public void lateCallbackExtrapolates() {
+    public void jitterStraddlingTheDeadlineStillMapsToConsecutiveVsyncs() {
+        // Raw arrival + safety lands at D_i - 1 ms +/- 1.2 ms: a per-frame choice would alternate.
         PresentPolicy p = newPolicy();
-        p.onVsync(D0, P0, T);
-        assertEquals(P0 + 4 * T, p.targetFor(D0 + 3 * T + 500_000L));
-    }
-
-    @Test
-    public void cleanArrivalsStayAtDepth0() {
-        PresentPolicy p = newPolicy();
-        p.onVsync(D0, P0, T);
-        for (int i = 0; i < 500; i++) {
-            p.targetFor(clean(i));
+        long last = 0;
+        for (int i = 0; i < 400; i++) {
+            long target = p.targetFor(D0 + i * T - 2_000_000L + jitter(i));
+            if (i >= 40) {
+                assertEquals("frame " + i, T, target - last);
+            }
+            last = target;
         }
-        assertEquals(0, p.depth());
-        assertEquals(0, p.depthSwitches());
     }
 
     @Test
-    public void edgeArrivalsSwitchToDepth1() {
+    public void singleLateSpikeDoesNotRemap() {
         PresentPolicy p = newPolicy();
-        int i = driveToDepth1(p);
-        assertEquals(1, p.depth());
-        assertEquals(P0 + (i + 1) * T, p.targetFor(clean(i)));
-    }
-
-    @Test
-    public void quietWindowReturnsToDepth0() {
-        PresentPolicy p = newPolicy();
-        int start = driveToDepth1(p);
-        for (int i = start; i < start + 240; i++) {
-            p.targetFor(clean(i));
+        for (int i = 0; i < 200; i++) {
+            p.targetFor(D0 + i * T - 5_000_000L);
         }
-        assertEquals(0, p.depth());
-        assertEquals(2, p.depthSwitches());
+        p.targetFor(D0 + 200 * T - 5_000_000L + 6_000_000L);
+        for (int i = 201; i < 221; i++) {
+            assertEquals("frame " + i, P0 + i * T - HALF, p.targetFor(D0 + i * T - 5_000_000L));
+        }
+    }
+
+    @Test
+    public void sourceFasterThanDisplayDropsOncePerCrossing() {
+        PresentPolicy p = newPolicy();
+        long sourcePeriod = T - 2_000L;
+        long last = 0;
+        int collisions = 0, gaps = 0;
+        for (int i = 0; i < 6000; i++) {
+            long target = p.targetFor(D0 + i * sourcePeriod - 4_000_000L);
+            if (i > 0) {
+                long diff = target - last;
+                if (diff == 0) collisions++;
+                if (diff >= 2 * T) gaps++;
+            }
+            last = target;
+        }
+        // 12 ms of drift crosses one or two vsync boundaries: one drop each, never a repeat.
+        assertTrue("collisions=" + collisions, collisions >= 1 && collisions <= 2);
+        assertEquals(0, gaps);
+    }
+
+    @Test
+    public void halfRateSourceAdvancesTwoVsyncsPerFrame() {
+        PresentPolicy p = newPolicy();
+        long last = 0;
+        for (int i = 0; i < 200; i++) {
+            long target = p.targetFor(D0 + i * 2 * T - 4_000_000L + jitter(i));
+            if (i >= 40) {
+                assertEquals("frame " + i, 2 * T, target - last);
+            }
+            last = target;
+        }
     }
 
     @Test
     public void periodMismatchKeepsTargetsMonotonic() {
-        PresentPolicy p = newPolicy();
-        long period = 11_111_111L;
-        p.onVsync(D0, P0, period);
+        PresentPolicy p = new PresentPolicy(1_000_000L, 500_000L);
+        p.onVsync(D0, P0, 11_111_111L);
         long last = Long.MIN_VALUE;
         for (int i = 0; i < 300; i++) {
-            long now = D0 + i * 8_333_333L;
+            long now = D0 + i * T;
             long target = p.targetFor(now);
             assertTrue("target went backwards at " + i, target >= last);
             assertTrue("target not in the future at " + i, target > now);
@@ -99,7 +109,6 @@ public class PresentPolicyTest {
     @Test
     public void staleSnapshotStillTargetsFuture() {
         PresentPolicy p = newPolicy();
-        p.onVsync(D0, P0, T);
         long now = D0 + 10_000_000_000L;
         long target = p.targetFor(now);
         assertTrue(target > now);
@@ -107,13 +116,32 @@ public class PresentPolicyTest {
     }
 
     @Test
+    public void pauseResyncsInsteadOfChasingOldCadence() {
+        PresentPolicy p = newPolicy();
+        for (int i = 0; i < 100; i++) {
+            p.targetFor(D0 + i * T - 5_000_000L);
+        }
+        int resume = 100 + 120; // one second later
+        long last = 0;
+        for (int i = resume; i < resume + 50; i++) {
+            long now = D0 + i * T - 5_000_000L;
+            long target = p.targetFor(now);
+            assertTrue(target > now);
+            if (i > resume + 10) {
+                assertEquals("frame " + i, T, target - last);
+            }
+            last = target;
+        }
+    }
+
+    @Test
     public void resetClearsState() {
         PresentPolicy p = newPolicy();
-        driveToDepth1(p);
-        assertEquals(1, p.depth());
+        for (int i = 0; i < 100; i++) {
+            p.targetFor(D0 + i * T - 2_000_000L + jitter(i));
+        }
         p.reset();
-        assertEquals(0, p.depth());
-        assertEquals(0, p.edgesInWindow());
-        assertEquals(P0, p.targetFor(95_000_000L));
+        assertEquals(0, p.marginNs());
+        assertEquals(P0 - HALF, p.targetFor(95_000_000L));
     }
 }

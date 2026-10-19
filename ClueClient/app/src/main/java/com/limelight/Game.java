@@ -445,6 +445,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // desired FPS setting here in accordance with the active display refresh rate.
         int roundedRefreshRate = Math.round(displayRefreshRate);
         int chosenFrameRate = prefConfig.fps;
+        // CLUE: the Clue presenter needs Choreographer vsync callbacks (API 33); older devices get balanced
+        if (prefConfig.framePacing == PreferenceConfiguration.FRAME_PACING_CLUE &&
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            prefConfig.framePacing = PreferenceConfiguration.FRAME_PACING_BALANCED;
+            LimeLog.info("Clue presenter needs API 33, using balanced pacing");
+        }
         if (prefConfig.framePacing == PreferenceConfiguration.FRAME_PACING_CAP_FPS) {
             if (prefConfig.fps >= roundedRefreshRate) {
                 if (prefConfig.fps > roundedRefreshRate + 3) {

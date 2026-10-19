@@ -120,6 +120,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private final long[] cluePtsByOutputIndex = new long[64];
     // CLUE: overlay statistics over the newest 2 s at 120 fps (computed once per overlay update)
     private final com.clue.trace.TraceStats clueStats = new com.clue.trace.TraceStats(240);
+    // CLUE: H2 presenter, releases each frame at decode-out against Choreographer vsync timelines
+    private final com.clue.video.PresentPolicy cluePolicy = new com.clue.video.PresentPolicy(
+            com.clue.video.PresentPolicy.DEFAULT_SAFETY_NS, com.clue.video.PresentPolicy.DEFAULT_HYSTERESIS_NS);
+    private com.clue.video.ClueVsyncSource clueVsync;
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
@@ -667,6 +671,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (clueTrace != null) {
             clueTrace.reset();
         }
+        cluePolicy.reset(); // CLUE: a new decoder starts without a buffer decision
 
         // CLUE: always register the render listener (upstream gated it behind USE_FRAME_RENDER_TIME)
         // to record when each frame actually reached the display. Upstream's stats keep their
@@ -1016,14 +1021,23 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         Choreographer.getInstance().postFrameCallback(this);
     }
 
+    // CLUE: Game falls back to balanced below API 33, so this implies vsync callbacks are available
+    private boolean clueMode() {
+        return prefs.framePacing == PreferenceConfiguration.FRAME_PACING_CLUE &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU;
+    }
+
     private void startChoreographerThread() {
-        if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
+        if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED && !clueMode()) { // CLUE
             // Not using Choreographer in this pacing mode
             return;
         }
 
         // We use a separate thread to avoid any main thread delays from delaying rendering
-        choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
+        // CLUE: the vsync thread feeds the presenter, so it runs at display priority
+        choreographerHandlerThread = new HandlerThread("Video - Choreographer", clueMode() ?
+                Process.THREAD_PRIORITY_URGENT_DISPLAY :
+                Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
         choreographerHandlerThread.start();
 
         // Start the frame callbacks
@@ -1031,6 +1045,17 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         choreographerHandler.post(new Runnable() {
             @Override
             public void run() {
+                if (clueMode()) { // CLUE
+                    clueVsync = new com.clue.video.ClueVsyncSource(cluePolicy, new Runnable() {
+                        @Override
+                        public void run() {
+                            // Same recovery handshake doFrame() does for the balanced pacer
+                            doCodecRecoveryIfRequired(CR_FLAG_CHOREOGRAPHER);
+                        }
+                    });
+                    clueVsync.start();
+                    return;
+                }
                 Choreographer.getInstance().postFrameCallback(MediaCodecDecoderRenderer.this);
             }
         });
@@ -1041,6 +1066,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         rendererThread = new Thread() {
             @Override
             public void run() {
+                // CLUE: decode-out to release is latency-critical in every pacing mode
+                Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY);
+
                 BufferInfo info = new BufferInfo();
                 while (!stopping) {
                     try {
@@ -1049,6 +1077,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                         if (outIndex >= 0) {
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
+                            long clueTargetNs = 0; // CLUE
 
                             // CLUE: decoder output for this frame
                             com.clue.trace.FrameTrace clueFt = com.clue.trace.TraceSession.activeFrames();
@@ -1084,15 +1113,22 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                     // Use a PTS that will cause this frame to never be dropped
                                     videoDecoder.releaseOutputBuffer(lastIndex, 0);
                                 }
+                                else if (clueMode()) {
+                                    // CLUE: target the vsync chosen by the presenter policy; until the
+                                    // first vsync arrives, behave like the lowest latency mode
+                                    clueTargetNs = cluePolicy.targetFor(System.nanoTime());
+                                    videoDecoder.releaseOutputBuffer(lastIndex,
+                                            clueTargetNs != 0 ? clueTargetNs : System.nanoTime());
+                                }
                                 else {
                                     // Use a PTS that will cause this frame to be dropped if another comes in within
                                     // the same V-sync period
                                     videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
                                 }
 
-                                // CLUE: immediate-release pacing modes have no vsync target
+                                // CLUE: only the Clue presenter has a vsync target here
                                 if (clueFt != null) {
-                                    clueFt.onRelease(presentationTimeUs, System.nanoTime(), 0);
+                                    clueFt.onRelease(presentationTimeUs, System.nanoTime(), clueTargetNs);
                                 }
 
                                 activeWindowVideoStats.totalFramesRendered++;
@@ -1252,6 +1288,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                     // Deregister the frame callback (if registered)
                     Choreographer.getInstance().removeFrameCallback(MediaCodecDecoderRenderer.this);
+                    if (clueVsync != null) { // CLUE
+                        clueVsync.stop();
+                    }
                 }
             });
         }
@@ -1469,6 +1508,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     sb.append(String.format(java.util.Locale.US,
                             "\nEntrada→envío %.2f/%.2f ms (p50/p99)",
                             clueStats.inputSendP50(), clueStats.inputSendP99()));
+                    if (clueMode()) {
+                        sb.append(String.format(java.util.Locale.US,
+                                "\nPresentador Clue: margen %.2f ms · remapeos %d",
+                                cluePolicy.marginNs() / 1e6, cluePolicy.remaps()));
+                    }
                 }
 
                 perfListener.onPerfUpdate(sb.toString());
