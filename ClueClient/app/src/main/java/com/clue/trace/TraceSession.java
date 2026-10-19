@@ -221,6 +221,8 @@ public final class TraceSession {
                 + " driftInserted=" + counters.audioDriftFramesInserted.get()
                 + " bufferFrames=" + counters.audioBufferFrames.get()
                 + " ringUs=" + counters.audioRingUs.get()
+                + " ringTargetUs=" + counters.audioRingTargetUs.get()
+                + " ringSetpointUs=" + counters.audioRingSetpointUs.get()
                 + " outputLatencyUs=" + counters.audioOutputLatencyUs());
         android.util.Log.i("ClueTrace", "session input events=" + in[0] + " sent=" + in[1]
                 + " avgEventToSentMs=" + (in[1] > 0 ? (in[2] / in[1]) / 1e6 : -1)

@@ -98,6 +98,7 @@ static CLUE_AUDIO_DRIFT drift;
 static unsigned underrunsSeen;
 static unsigned packetsSinceXrunCheck;
 static int64_t lastWriteNs;
+static unsigned reopensSeen;
 
 // Consumer (callback) state
 static int primed;
@@ -111,6 +112,7 @@ static atomic_ullong statFillSum, statFillSamples;
 static atomic_llong statXrunsBase; // XRuns of streams already closed
 static atomic_int statXrunsNow;
 static atomic_int statBufferFrames, statBurstFrames, statExclusive, statSampleRate, statReopens;
+static atomic_int statSetpoint;
 
 static int64_t monoNowNs(void) {
     struct timespec ts;
@@ -188,6 +190,12 @@ static aaudio_data_callback_result_t dataCallback(AAudioStream* s, void* user, v
         }
         primed = 1;
     }
+
+    // Ring occupancy as played: halfway through this read, sampled once per callback (evenly in time)
+    uint32_t fillBefore = ClueRingFill(&ring);
+    uint32_t half = (uint32_t)numFrames / 2;
+    atomic_fetch_add_explicit(&statFillSum, fillBefore > half ? fillBefore - half : 0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&statFillSamples, 1, memory_order_relaxed);
 
     uint32_t got = ClueRingRead(&ring, out, (uint32_t)numFrames);
     if (got < (uint32_t)numFrames) {
@@ -354,17 +362,21 @@ static void tuneBuffer(void) {
 }
 
 void clueAudioWrite(const int16_t* pcm, int frames) {
-    // Underruns reported by the callback raise the drift target
-    // (only while packets were flowing: a host that pauses its audio is not network jitter)
+    // A reopened stream or a pause in the host's audio (> 100 ms without packets) starts over:
+    // the ring re-primes and the first packets arrive in a burst, which is not network jitter.
     int64_t nowNs = monoNowNs();
+    unsigned restart = atomic_load_explicit(&statReopens, memory_order_relaxed);
+    if (restart != reopensSeen || nowNs - lastWriteNs >= 100 * 1000000LL) {
+        reopensSeen = restart;
+        ClueDriftRestart(&drift);
+    }
+    lastWriteNs = nowNs;
+    // Underruns reported by the callback raise the drift target (outside its grace period)
     unsigned u = atomic_load_explicit(&underruns, memory_order_relaxed);
     if (u != underrunsSeen) {
         underrunsSeen = u;
-        if (nowNs - lastWriteNs < 100 * 1000000LL) {
-            ClueDriftOnUnderrun(&drift);
-        }
+        ClueDriftOnUnderrun(&drift);
     }
-    lastWriteNs = nowNs;
 
     int32_t fill = (int32_t)ClueRingFill(&ring);
     int32_t adj = ClueDriftOnPacket(&drift, fill, frames);
@@ -389,9 +401,7 @@ void clueAudioWrite(const int16_t* pcm, int frames) {
     } else {
         atomic_fetch_add_explicit(&statPlayed, 1, memory_order_relaxed);
     }
-    // The ring drains linearly between packets, so its mean level is about fill + n / 2
-    atomic_fetch_add_explicit(&statFillSum, (unsigned long long)(fill + n / 2), memory_order_relaxed);
-    atomic_fetch_add_explicit(&statFillSamples, 1, memory_order_relaxed);
+    atomic_store_explicit(&statSetpoint, ClueDriftSetpoint(&drift), memory_order_relaxed);
 
     tuneBuffer();
 }
@@ -429,6 +439,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueAudioOpen(JNIEnv* env, jclass cla
     underrunsSeen = 0;
     packetsSinceXrunCheck = 0;
     lastWriteNs = 0;
+    reopensSeen = 0;
+    atomic_store(&statSetpoint, 0);
     primed = 0;
     atomic_store(&flushRequest, false);
     atomic_store(&statPlayed, 0);
@@ -519,6 +531,7 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueAudioGetStats(JNIEnv* env, jclass
     s[CLUE_AUDIO_STAT_TARGET_FRAMES] = atomic_load(&primeFrames) - packetFrames;
     s[CLUE_AUDIO_STAT_REOPENS] = atomic_load(&statReopens);
     s[CLUE_AUDIO_STAT_FRAMES_LOST] = (jlong)atomic_load(&statFramesLost);
+    s[CLUE_AUDIO_STAT_SETPOINT_FRAMES] = atomic_load(&statSetpoint);
 
     jsize n = (*env)->GetArrayLength(env, out);
     if (n > CLUE_AUDIO_STAT_COUNT) {

@@ -32,7 +32,8 @@ public final class ClueAudio {
     public static final int STAT_TARGET_FRAMES = 12;
     public static final int STAT_REOPENS = 13;
     public static final int STAT_FRAMES_LOST = 14;
-    public static final int STAT_COUNT = 15;
+    public static final int STAT_SETPOINT_FRAMES = 15;
+    public static final int STAT_COUNT = 16;
 
     private ClueAudio() {
     }
@@ -66,6 +67,11 @@ public final class ClueAudio {
         c.audioDriftFramesInserted.set(s[STAT_DRIFT_INSERTED]);
         c.audioRingUs.set(s[STAT_RING_MEAN_US]);
         c.audioBufferFrames.set(s[STAT_BUFFER_FRAMES]);
+        long rate = s[STAT_SAMPLE_RATE];
+        if (rate > 0) {
+            c.audioRingTargetUs.set(s[STAT_TARGET_FRAMES] * 1_000_000L / rate);
+            c.audioRingSetpointUs.set(s[STAT_SETPOINT_FRAMES] * 1_000_000L / rate);
+        }
         c.audioPath = s[STAT_EXCLUSIVE] != 0 ? "aaudio-exclusive" : "aaudio-shared";
         long hw = s[STAT_HW_LATENCY_US];
         // Ignore the stream's first moments and anything implausible (timestamps not valid yet)

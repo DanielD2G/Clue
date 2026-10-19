@@ -1,6 +1,7 @@
 // Native tests for the AAudio path's ring and drift control (clue_audio_ring.c).
 // Built for arm64 and run on the device by tools/native-test.sh.
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,8 +11,10 @@ static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("  FAIL %s:%d: %s\n", __func__, __LINE__, #cond); failures++; } } while (0)
 
 #define RATE 48000
-#define PACKET 240 // 5 ms
-#define BURST 96   // 2 ms
+#define PACKET 240 // 5 ms Opus packets
+#define BURST 192  // POCO Pad SHARED stream burst (4 ms)
+
+// ---------------------------------------------------------------- ring
 
 static void ringWrapsAndKeepsOrder(void) {
     int16_t buf[8 * 2];
@@ -59,17 +62,88 @@ static void ringCountersSurviveUnsignedWrap(void) {
     CHECK(out[0] == 7 && out[1] == 8 && out[2] == 9);
 }
 
+// ---------------------------------------------------------------- drift: configuration and target
+
 static void driftStartsAtOneBurstOrTwoMs(void) {
     CLUE_AUDIO_DRIFT d;
     ClueDriftInit(&d, BURST, PACKET, RATE);
-    CHECK(d.target == 96);
+    CHECK(d.target == 192);
     CHECK(d.windowPackets == 200);
-    CHECK(ClueDriftPrimeFrames(&d, PACKET) == 96 + PACKET);
+    CHECK(d.deadBand == 96);
+    CHECK(d.raiseStep == 96);
+    CHECK(ClueDriftPrimeFrames(&d, PACKET) == 192 + PACKET);
     ClueDriftInit(&d, 48, PACKET, RATE);
     CHECK(d.target == 96);
-    ClueDriftInit(&d, 192, PACKET, RATE);
+    CHECK(d.raiseStep == 48);
+    CHECK(d.deadBand == 96);
+}
+
+static void underrunsDuringTheFirstTwoSecondsDoNotRaiseTheTarget(void) {
+    CLUE_AUDIO_DRIFT d;
+    ClueDriftInit(&d, BURST, PACKET, RATE);
+    for (int i = 0; i < 2 * d.windowPackets - 1; i++) {
+        ClueDriftOnPacket(&d, 300, PACKET);
+        if (i % 50 == 0) CHECK(ClueDriftOnUnderrun(&d) == 0);
+    }
+    CHECK(d.target == 192);
+    ClueDriftOnPacket(&d, 300, PACKET);
+    CHECK(ClueDriftOnUnderrun(&d) == 1);
+    CHECK(d.target == 192 + 96);
+    // A restart (stream reopened, host paused its audio) opens a new grace period
+    ClueDriftRestart(&d);
+    ClueDriftOnPacket(&d, 300, PACKET);
+    CHECK(ClueDriftOnUnderrun(&d) == 0);
+    CHECK(d.target == 192 + 96);
+}
+
+static void underrunRaisesTargetUpToTheCap(void) {
+    CLUE_AUDIO_DRIFT d;
+    ClueDriftInit(&d, BURST, PACKET, RATE);
+    d.sinceStart = INT32_MAX;
+    for (int i = 0; i < 100; i++) ClueDriftOnUnderrun(&d);
+    CHECK(d.target == 40 * 48);
+    CHECK(d.pending == 0 && d.windowCount == 0);
+}
+
+static void targetDecaysAfterTenCleanSecondsDownToOneBurst(void) {
+    CLUE_AUDIO_DRIFT d;
+    ClueDriftInit(&d, BURST, PACKET, RATE);
+    d.sinceStart = INT32_MAX;
+    ClueDriftOnUnderrun(&d);
+    ClueDriftOnUnderrun(&d);
+    CHECK(d.target == 192 + 2 * 96);
+    for (int i = 0; i < 10 * d.windowPackets - 1; i++) ClueDriftOnPacket(&d, 400, PACKET);
+    CHECK(d.target == 192 + 2 * 96);
+    ClueDriftOnPacket(&d, 400, PACKET);
+    CHECK(d.target == 192 + 96);
+    for (int i = 0; i < 30 * d.windowPackets; i++) ClueDriftOnPacket(&d, 400, PACKET);
     CHECK(d.target == 192);
 }
+
+static void anUnderrunRightAfterADecayDoublesTheDecayInterval(void) {
+    CLUE_AUDIO_DRIFT d;
+    ClueDriftInit(&d, BURST, PACKET, RATE);
+    d.sinceStart = INT32_MAX;
+    ClueDriftOnUnderrun(&d);
+    for (int i = 0; i < 10 * d.windowPackets; i++) ClueDriftOnPacket(&d, 400, PACKET);
+    CHECK(d.target == 192);           // decayed
+    ClueDriftOnPacket(&d, 400, PACKET);
+    ClueDriftOnUnderrun(&d);          // ... and underran right away
+    CHECK(d.decayPackets == 20 * d.windowPackets);
+    CHECK(d.target == 192 + 96);
+    for (int i = 0; i < 10 * d.windowPackets; i++) ClueDriftOnPacket(&d, 400, PACKET);
+    CHECK(d.target == 192 + 96);      // not yet: the interval is 20 s now
+    for (int i = 0; i < 10 * d.windowPackets; i++) ClueDriftOnPacket(&d, 400, PACKET);
+    CHECK(d.target == 192);
+    // Capped at 120 s
+    for (int i = 0; i < 10; i++) {
+        d.sinceDecay = 0;
+        ClueDriftOnUnderrun(&d);
+    }
+    CHECK(d.decayPackets == 120 * d.windowPackets);
+}
+
+// ---------------------------------------------------------------- drift: steering
 
 // Runs one window with a constant fill; returns the sum of the decisions taken during it.
 static int runWindow(CLUE_AUDIO_DRIFT* d, int fill) {
@@ -80,126 +154,200 @@ static int runWindow(CLUE_AUDIO_DRIFT* d, int fill) {
     return sum;
 }
 
-typedef struct {
-    int base;      // ring level before jitter; every decision moves it
-    int maxStep;   // largest |decision|
-    int drops;     // frames dropped
-    int dups;      // frames duplicated
-    int lastMin;   // lowest fill of the last full window
-} SIM;
-
-// Simulates `packets` packets. Packet k sees base + jitter(k). `driftEvery` != 0 moves the base by
-// one frame every |driftEvery| packets (> 0: host clock faster than the DAC, the ring grows).
-static void simulate(CLUE_AUDIO_DRIFT* d, SIM* s, int packets, int jitterRange, int driftEvery) {
-    unsigned lcg = 12345;
-    int windowMin = INT32_MAX;
-    for (int k = 0; k < packets; k++) {
-        int jitter = 0;
-        if (jitterRange > 0) {
-            lcg = lcg * 1103515245u + 12345u;
-            jitter = (int)((lcg >> 16) % (unsigned)jitterRange);
-        }
-        if (driftEvery != 0 && k % (driftEvery > 0 ? driftEvery : -driftEvery) == 0) {
-            s->base += driftEvery > 0 ? 1 : -1;
-        }
-        int fill = s->base + jitter;
-        if (fill < windowMin) windowMin = fill;
-        if ((k + 1) % d->windowPackets == 0) {
-            s->lastMin = windowMin;
-            windowMin = INT32_MAX;
-        }
-        int adj = ClueDriftOnPacket(d, fill, PACKET);
-        int mag = adj < 0 ? -adj : adj;
-        if (mag > s->maxStep) s->maxStep = mag;
-        if (adj > 0) s->drops += adj; else s->dups -= adj;
-        s->base -= adj;
-    }
-}
-
 static void driftDoesNothingInsideTheDeadBand(void) {
     CLUE_AUDIO_DRIFT d;
     ClueDriftInit(&d, BURST, PACKET, RATE);
-    CHECK(runWindow(&d, d.target + d.hyst) == 0);
-    CHECK(runWindow(&d, d.target - d.hyst) == 0);
+    CHECK(runWindow(&d, d.target + d.deadBand) == 0);
+    CHECK(runWindow(&d, d.target - d.deadBand) == 0);
     CHECK(runWindow(&d, d.target) == 0);
 }
 
 static void driftDrainsABacklogGraduallyWithoutOvershoot(void) {
     CLUE_AUDIO_DRIFT d;
     ClueDriftInit(&d, BURST, PACKET, RATE);
-    SIM s = { .base = 96 + 960 }; // 20 ms too much
-    simulate(&d, &s, d.windowPackets, 0, 0);
-    CHECK(s.drops <= 4); // the first window only measures
-    simulate(&d, &s, 4 * d.windowPackets, 0, 0);
-    CHECK(s.base == d.target);
-    CHECK(s.drops == 960 && s.dups == 0);
-    CHECK(s.maxStep <= 4); // never more than 4 frames of a 240-frame packet
-}
-
-static void driftCorrectsASmallOffsetOneFrameAtATime(void) {
-    CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, PACKET, RATE);
-    SIM s = { .base = 96 + 60 };
-    simulate(&d, &s, 3 * d.windowPackets, 0, 0);
-    CHECK(s.base == d.target);
-    CHECK(s.maxStep == 1);
-}
-
-static void driftDuplicatesWhenTheRingRunsLow(void) {
-    CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, PACKET, RATE);
-    SIM s = { .base = 0 };
-    simulate(&d, &s, 4 * d.windowPackets, 0, 0);
-    CHECK(s.base == d.target);
-    CHECK(s.drops == 0 && s.dups == d.target);
-}
-
-static void driftTracksSteadyClockDriftBothWays(void) {
-    // 200 ppm at 48 kHz is about one frame every 21 packets of 240 frames
-    for (int dir = -1; dir <= 1; dir += 2) {
-        CLUE_AUDIO_DRIFT d;
-        ClueDriftInit(&d, BURST, PACKET, RATE);
-        SIM s = { .base = 96 };
-        simulate(&d, &s, 60 * d.windowPackets, 0, 21 * dir);
-        CHECK(s.lastMin >= d.target - d.hyst - 20);
-        CHECK(s.lastMin <= d.target + d.hyst + 20);
-        CHECK(s.maxStep == 1);
-        CHECK(dir > 0 ? s.drops > 400 && s.dups == 0 : s.dups > 400 && s.drops == 0);
+    int level = 192 + 960; // 20 ms too much, no jitter
+    int drops = 0, dups = 0, maxStep = 0;
+    for (int k = 0; k < 20 * d.windowPackets; k++) {
+        int adj = ClueDriftOnPacket(&d, level, PACKET);
+        if (adj > maxStep) maxStep = adj;
+        if (adj > 0) drops += adj; else dups -= adj;
+        level -= adj;
     }
+    CHECK(dups == 0);
+    CHECK(maxStep <= 4);  // never more than 4 frames of a 240-frame packet
+    CHECK(level > d.target && level <= d.target + d.deadBand);
+    CHECK(drops == 192 + 960 - level);
 }
 
-static void driftKeepsTheJitterMinimumAtTarget(void) {
+static void driftStepNeverExceedsAnEighthOfThePacket(void) {
     CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, PACKET, RATE);
-    SIM s = { .base = 1500 };
-    simulate(&d, &s, 15 * d.windowPackets, 300, 0);
-    CHECK(s.lastMin >= d.target - d.hyst - 8);
-    CHECK(s.lastMin <= d.target + d.hyst + 8);
-    CHECK(s.maxStep <= 4);
+    ClueDriftInit(&d, BURST, 16, RATE);
+    for (int i = 0; i < d.windowPackets - 1; i++) ClueDriftOnPacket(&d, 5000, 16);
+    CHECK(ClueDriftOnPacket(&d, 5000, 16) == 2);
+    CHECK(ClueDriftOnPacket(&d, 5000, 16) == 2);
 }
 
-static void underrunRaisesTargetUpToTheCapAndDecaysSlowly(void) {
+// ---------------------------------------------------------------- drift: closed-loop simulation
+//
+// Event simulation of the real pipeline: the host sends a 240-frame packet every 5 ms on its own
+// clock (ppm faster than the DAC), the network delays each by 2 ms + uniform [0, jitterUs) and,
+// with burstEvery > 1, holds packets back and releases them in groups. The producer runs drift
+// control and writes into the ring; the consumer reads callbackFrames per callback on the DAC
+// clock, with the same priming and underrun rules as the AAudio callback in clue_aaudio.c.
+
+typedef struct {
+    int ppm;
+    int jitterUs;
+    int burstEvery;
+    int spikeEvery;     // > 0: about one packet in this many is 8 ms later still (Wi-Fi retries)
+    int callbackFrames;
+    int seconds;
+    int warmupSeconds;
+} SCENARIO;
+
+typedef struct {
+    long long drops, dups;           // after warm-up
+    int underruns;                   // after warm-up
+    int mixedWindows;                // windows with both drops and duplicates (whole run)
+    double meanOccupancyMs;          // mean ring level as played, after warm-up
+    int target;
+} RESULT;
+
+static RESULT simulate(const SCENARIO* sc) {
+    RESULT res;
+    memset(&res, 0, sizeof(res));
     CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, PACKET, RATE);
-    ClueDriftOnUnderrun(&d);
-    CHECK(d.target == 96 + BURST);
-    CHECK(d.pending == 0 && d.windowCount == 0);
-    for (int i = 0; i < 100; i++) ClueDriftOnUnderrun(&d);
-    CHECK(d.target == 40 * 48);
-    // 60 s without underruns gives back half a step
-    int before = d.target;
-    for (int i = 0; i < d.decayPackets - 1; i++) ClueDriftOnPacket(&d, d.target, PACKET);
-    CHECK(d.target == before);
-    ClueDriftOnPacket(&d, d.target, PACKET);
-    CHECK(d.target == before - BURST / 2);
+    ClueDriftInit(&d, sc->callbackFrames, PACKET, RATE);
+
+    const double packetNs = 5e6 * 1e6 / (1e6 + sc->ppm);
+    const double callbackNs = sc->callbackFrames * 1e9 / RATE;
+    const double endNs = sc->seconds * 1e9, warmNs = sc->warmupSeconds * 1e9;
+    unsigned lcg = 2024;
+    long long k = 0;
+    double prevArrival = 0, nextCallback = callbackNs;
+    int ring = 0, primed = 0, underruns = 0, underrunsSeen = 0, windowSign = 0;
+    double occSum = 0;
+    long long occN = 0;
+
+    double nextArrival = 0;
+    for (;;) {
+        // arrival of packet k
+        long long releaseIdx = sc->burstEvery > 1 ? (k / sc->burstEvery + 1) * sc->burstEvery - 1 : k;
+        lcg = lcg * 1103515245u + 12345u;
+        double delay = 2e6 + (sc->jitterUs > 0 ? (double)((lcg >> 8) % (unsigned)sc->jitterUs) * 1e3 : 0);
+        if (sc->spikeEvery > 0 && lcg % (unsigned)sc->spikeEvery == 7) delay += 8e6;
+        nextArrival = releaseIdx * packetNs + delay;
+        if (nextArrival < prevArrival) nextArrival = prevArrival;
+
+        // consumer callbacks that come before it
+        while (nextCallback < nextArrival && nextCallback < endNs) {
+            if (!primed && ring >= ClueDriftPrimeFrames(&d, PACKET)) primed = 1;
+            if (primed) {
+                if (nextCallback >= warmNs) {
+                    occSum += ring - sc->callbackFrames / 2.0;
+                    occN++;
+                }
+                if (ring < sc->callbackFrames) {
+                    ring = 0;
+                    primed = 0;
+                    underruns++;
+                    if (nextCallback >= warmNs) res.underruns++;
+                } else {
+                    ring -= sc->callbackFrames;
+                }
+            }
+            nextCallback += callbackNs;
+        }
+        if (nextArrival >= endNs) break;
+
+        // producer: same order as clueAudioWrite
+        if (underruns != underrunsSeen) {
+            underrunsSeen = underruns;
+            ClueDriftOnUnderrun(&d);
+        }
+        int adj = ClueDriftOnPacket(&d, ring, PACKET);
+        if (d.windowCount == 0) windowSign = 0; // a window ended inside this call
+        if (adj != 0) {
+            int sign = adj > 0 ? 1 : -1;
+            if (windowSign != 0 && windowSign != sign) res.mixedWindows++;
+            windowSign = sign;
+            if (nextArrival >= warmNs) {
+                if (adj > 0) res.drops += adj; else res.dups -= adj;
+            }
+        }
+        ring += PACKET - adj;
+        prevArrival = nextArrival;
+        k++;
+    }
+    res.meanOccupancyMs = occN > 0 ? occSum / occN / (RATE / 1000.0) : -1;
+    res.target = d.target;
+    return res;
 }
 
-static void decayStopsAtTheInitialTarget(void) {
-    CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, PACKET, RATE);
-    for (int i = 0; i < 3 * d.decayPackets; i++) ClueDriftOnPacket(&d, d.target, PACKET);
-    CHECK(d.target == d.minTarget);
+static void report(const char* name, const RESULT* r) {
+    printf("  %-34s drops %5lld dups %5lld underruns %d mixed %d ring %.1f ms target %d\n",
+           name, r->drops, r->dups, r->underruns, r->mixedWindows, r->meanOccupancyMs, r->target);
 }
+
+// The device failure: bursty 5 ms packets with +-3 ms jitter and no clock drift made the old
+// controller drop and insert ~10000 frames a minute.
+static void jitteryButStableArrivalsNeedAlmostNoCorrection(void) {
+    SCENARIO sc = { .ppm = 0, .jitterUs = 6000, .burstEvery = 2, .callbackFrames = BURST,
+                    .seconds = 120, .warmupSeconds = 20 };
+    RESULT r = simulate(&sc);
+    report("jitter +-3 ms, bursts, 0 ppm", &r);
+    CHECK(r.drops + r.dups <= 100); // over 100 s
+    CHECK(r.mixedWindows == 0);
+    CHECK(r.underruns == 0);
+}
+
+// Same, plus an 8 ms late packet about every 1.5 s. This is the pattern that reproduces the
+// device numbers with the old min-chasing controller (~5800 frames dropped and ~5600 inserted
+// in 100 s); the mean-based controller leaves it alone.
+static void occasionalLatePacketsDoNotMakeItChase(void) {
+    SCENARIO sc = { .ppm = 0, .jitterUs = 6000, .burstEvery = 2, .spikeEvery = 300,
+                    .callbackFrames = BURST, .seconds = 120, .warmupSeconds = 20 };
+    RESULT r = simulate(&sc);
+    report("jitter +-3 ms, bursts, 8 ms spikes", &r);
+    CHECK(r.drops + r.dups <= 100);
+    CHECK(r.mixedWindows == 0);
+    CHECK(r.underruns == 0);
+}
+
+static void tracksHostClockFasterThanTheDac(void) {
+    SCENARIO sc = { .ppm = 200, .jitterUs = 6000, .burstEvery = 2, .callbackFrames = BURST,
+                    .seconds = 120, .warmupSeconds = 20 };
+    RESULT r = simulate(&sc);
+    report("jitter +-3 ms, bursts, +200 ppm", &r);
+    // 200 ppm of 48 kHz over 100 s is 960 frames, all of them drops
+    CHECK(r.drops >= 700 && r.drops <= 1250);
+    CHECK(r.dups <= 20);
+    CHECK(r.mixedWindows == 0);
+    CHECK(r.underruns == 0);
+}
+
+static void tracksHostClockSlowerThanTheDac(void) {
+    SCENARIO sc = { .ppm = -200, .jitterUs = 6000, .burstEvery = 2, .callbackFrames = BURST,
+                    .seconds = 120, .warmupSeconds = 20 };
+    RESULT r = simulate(&sc);
+    report("jitter +-3 ms, bursts, -200 ppm", &r);
+    CHECK(r.dups >= 700 && r.dups <= 1250);
+    CHECK(r.drops <= 20);
+    CHECK(r.mixedWindows == 0);
+    CHECK(r.underruns == 0);
+}
+
+static void cleanLinkKeepsTheRingShort(void) {
+    SCENARIO sc = { .ppm = 0, .jitterUs = 500, .burstEvery = 1, .callbackFrames = BURST,
+                    .seconds = 60, .warmupSeconds = 15 };
+    RESULT r = simulate(&sc);
+    report("clean link, 0 ppm", &r);
+    CHECK(r.meanOccupancyMs > 0 && r.meanOccupancyMs <= 8.5); // 1 burst of margin + packet/callback phase
+    CHECK(r.underruns == 0);
+    CHECK(r.drops + r.dups <= 20);
+}
+
+// ---------------------------------------------------------------- applying a decision
 
 static void applyDropMergesNeighboursSpreadOverThePacket(void) {
     int16_t in[PACKET * 2], out[(PACKET + 8) * 2];
@@ -236,31 +384,26 @@ static void applyClampsAndCopies(void) {
     CHECK(ClueDriftApply(in, 7, 1, 1, out) == 7);      // too short to touch
 }
 
-static void driftStepNeverExceedsAnEighthOfThePacket(void) {
-    CLUE_AUDIO_DRIFT d;
-    ClueDriftInit(&d, BURST, 16, RATE);
-    for (int i = 0; i < d.windowPackets; i++) ClueDriftOnPacket(&d, 5000, 16);
-    int adj = ClueDriftOnPacket(&d, 5000, 16);
-    CHECK(adj == 2);
-}
-
 int main(void) {
     ringWrapsAndKeepsOrder();
     ringFullTakesOnlyWhatFitsAndEmptyReadsNothing();
     ringCountersSurviveUnsignedWrap();
     driftStartsAtOneBurstOrTwoMs();
+    underrunsDuringTheFirstTwoSecondsDoNotRaiseTheTarget();
+    underrunRaisesTargetUpToTheCap();
+    targetDecaysAfterTenCleanSecondsDownToOneBurst();
+    anUnderrunRightAfterADecayDoublesTheDecayInterval();
     driftDoesNothingInsideTheDeadBand();
     driftDrainsABacklogGraduallyWithoutOvershoot();
-    driftCorrectsASmallOffsetOneFrameAtATime();
-    driftDuplicatesWhenTheRingRunsLow();
-    driftTracksSteadyClockDriftBothWays();
-    driftKeepsTheJitterMinimumAtTarget();
-    underrunRaisesTargetUpToTheCapAndDecaysSlowly();
-    decayStopsAtTheInitialTarget();
+    driftStepNeverExceedsAnEighthOfThePacket();
+    jitteryButStableArrivalsNeedAlmostNoCorrection();
+    occasionalLatePacketsDoNotMakeItChase();
+    tracksHostClockFasterThanTheDac();
+    tracksHostClockSlowerThanTheDac();
+    cleanLinkKeepsTheRingShort();
     applyDropMergesNeighboursSpreadOverThePacket();
     applyInsertAddsAveragedFrames();
     applyClampsAndCopies();
-    driftStepNeverExceedsAnEighthOfThePacket();
     printf(failures ? "clue_audio_test: %d FAILED\n" : "clue_audio_test: all passed\n", failures);
     return failures ? 1 : 0;
 }

@@ -44,6 +44,9 @@ public class ClueAudioTest {
         s[ClueAudio.STAT_RING_MEAN_US] = 4500;
         s[ClueAudio.STAT_BUFFER_FRAMES] = 192;
         s[ClueAudio.STAT_EXCLUSIVE] = 1;
+        s[ClueAudio.STAT_SAMPLE_RATE] = 48000;
+        s[ClueAudio.STAT_TARGET_FRAMES] = 192;
+        s[ClueAudio.STAT_SETPOINT_FRAMES] = 336;
         return s;
     }
 
@@ -61,6 +64,8 @@ public class ClueAudioTest {
         assertEquals("aaudio-exclusive", c.audioPath);
         assertEquals(9000, c.audioHwLatencyUs.get());
         assertEquals(13500, c.audioOutputLatencyUs());
+        assertEquals(4000, c.audioRingTargetUs.get());
+        assertEquals(7000, c.audioRingSetpointUs.get());
     }
 
     @Test
