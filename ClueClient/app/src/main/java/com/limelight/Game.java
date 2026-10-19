@@ -124,6 +124,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean autoEnterPip = false;
     private boolean surfaceCreated = false;
     private boolean attemptedConnection = false;
+    private com.clue.trace.TraceSession clueTraceSession; // CLUE
     private int suppressPipRefCount = 0;
     private String pcName;
     private String appName;
@@ -2232,6 +2233,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
             controllerHandler.stop();
 
+            // CLUE: end the trace session (the writer is hooked here in a later step)
+            if (clueTraceSession != null) {
+                clueTraceSession.stop();
+                clueTraceSession = null;
+            }
+
             // Update GameManager state to indicate we're no longer in game
             UiHelper.notifyStreamEnded(this);
 
@@ -2515,6 +2522,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             UiHelper.notifyStreamConnecting(Game.this);
 
             decoderRenderer.setRenderTarget(holder);
+
+            // CLUE: start tracing before the first decode unit can arrive
+            clueTraceSession = com.clue.trace.TraceSession.start(Game.this);
+
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
         }

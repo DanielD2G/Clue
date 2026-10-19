@@ -115,6 +115,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private PreferenceConfiguration prefs;
 
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
+    // CLUE: PTS of each dequeued output buffer, indexed by MediaCodec output index, so the
+    // balanced pacer can attribute its release to the right traced frame without allocating.
+    private final long[] cluePtsByOutputIndex = new long[64];
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
@@ -657,10 +660,24 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         }
 
-        if (USE_FRAME_RENDER_TIME && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        // CLUE: a new decoder means earlier PTS values must not match new frames
+        com.clue.trace.FrameTrace clueTrace = com.clue.trace.TraceSession.activeFrames();
+        if (clueTrace != null) {
+            clueTrace.reset();
+        }
+
+        // CLUE: always register the render listener (upstream gated it behind USE_FRAME_RENDER_TIME)
+        // to record when each frame actually reached the display. Upstream's stats keep their
+        // original semantics because USE_FRAME_RENDER_TIME stays false.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             videoDecoder.setOnFrameRenderedListener(new MediaCodec.OnFrameRenderedListener() {
                 @Override
                 public void onFrameRendered(MediaCodec mediaCodec, long presentationTimeUs, long renderTimeNanos) {
+                    com.clue.trace.FrameTrace ft = com.clue.trace.TraceSession.activeFrames();
+                    if (ft != null) {
+                        ft.onPresented(presentationTimeUs, renderTimeNanos);
+                    }
+
                     long delta = (renderTimeNanos / 1000000L) - (presentationTimeUs / 1000);
                     if (delta >= 0 && delta < 1000) {
                         if (USE_FRAME_RENDER_TIME) {
@@ -968,6 +985,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 try {
                     videoDecoder.releaseOutputBuffer(nextOutputBuffer, frameTimeNanos);
 
+                    // CLUE: balanced pacer release, targeting this Choreographer frame
+                    com.clue.trace.FrameTrace ft = com.clue.trace.TraceSession.activeFrames();
+                    if (ft != null && nextOutputBuffer < cluePtsByOutputIndex.length) {
+                        ft.onRelease(cluePtsByOutputIndex[nextOutputBuffer], System.nanoTime(), frameTimeNanos);
+                    }
+
                     lastRenderedFrameTimeNanos = frameTimeNanos;
                     activeWindowVideoStats.totalFramesRendered++;
                 } catch (IllegalStateException ignored) {
@@ -1025,6 +1048,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             long presentationTimeUs = info.presentationTimeUs;
                             int lastIndex = outIndex;
 
+                            // CLUE: decoder output for this frame
+                            com.clue.trace.FrameTrace clueFt = com.clue.trace.TraceSession.activeFrames();
+                            if (clueFt != null) {
+                                clueFt.onDecodeOutput(presentationTimeUs, System.nanoTime());
+                            }
+                            if (outIndex < cluePtsByOutputIndex.length) {
+                                cluePtsByOutputIndex[outIndex] = presentationTimeUs;
+                            }
+
                             numFramesOut++;
 
                             // Render the latest frame now if frame pacing isn't in balanced mode
@@ -1037,6 +1069,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                                     lastIndex = outIndex;
                                     presentationTimeUs = info.presentationTimeUs;
+
+                                    // CLUE: newer output superseded the previous one
+                                    if (clueFt != null) {
+                                        clueFt.onDecodeOutput(presentationTimeUs, System.nanoTime());
+                                    }
                                 }
 
                                 if (prefs.framePacing == PreferenceConfiguration.FRAME_PACING_MAX_SMOOTHNESS ||
@@ -1049,6 +1086,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                     // Use a PTS that will cause this frame to be dropped if another comes in within
                                     // the same V-sync period
                                     videoDecoder.releaseOutputBuffer(lastIndex, System.nanoTime());
+                                }
+
+                                // CLUE: immediate-release pacing modes have no vsync target
+                                if (clueFt != null) {
+                                    clueFt.onRelease(presentationTimeUs, System.nanoTime(), 0);
                                 }
 
                                 activeWindowVideoStats.totalFramesRendered++;
@@ -1640,6 +1682,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         activeWindowVideoStats.totalFramesReceived++;
         activeWindowVideoStats.totalFrames++;
 
+        // CLUE: picture data for this frame was fully received (timestamps already CLOCK_MONOTONIC)
+        com.clue.trace.FrameTrace clueTrace = com.clue.trace.TraceSession.activeFrames();
+        if (clueTrace != null) {
+            clueTrace.onReceived(frameNumber, receiveTimeUs, enqueueTimeUs, frameHostProcessingLatency);
+        }
+
         if (!FRAME_RENDER_TIME_ONLY) {
             // Count time from first packet received to enqueue time as receive time
             // We will count DU queue time as part of decoding, because it is directly
@@ -1697,6 +1745,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Copy data from our buffer list into the input buffer
         nextInputBuffer.put(decodeUnitData, 0, decodeUnitLength);
+
+        // CLUE: decoder input, keyed by the PTS MediaCodec will hand back
+        if (clueTrace != null) {
+            clueTrace.onDecodeInput(frameNumber, timestampUs, System.nanoTime());
+        }
 
         if (!queueNextInputBuffer(timestampUs, codecFlags)) {
             return MoonBridge.DR_NEED_IDR;
