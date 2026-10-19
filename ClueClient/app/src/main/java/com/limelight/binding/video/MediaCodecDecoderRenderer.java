@@ -118,6 +118,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     // CLUE: PTS of each dequeued output buffer, indexed by MediaCodec output index, so the
     // balanced pacer can attribute its release to the right traced frame without allocating.
     private final long[] cluePtsByOutputIndex = new long[64];
+    // CLUE: overlay statistics over the newest 2 s at 120 fps (computed once per overlay update)
+    private final com.clue.trace.TraceStats clueStats = new com.clue.trace.TraceStats(240);
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
@@ -1449,6 +1451,26 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             (float)lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency)).append('\n');
                 }
                 sb.append(context.getString(R.string.perf_overlay_dectime, decodeTimeMs));
+
+                // CLUE: latency and cadence from Clue's own per-frame trace
+                com.clue.trace.TraceSession clueSession = com.clue.trace.TraceSession.current();
+                if (clueSession != null) {
+                    clueStats.compute(clueSession.frames(), clueSession.input(),
+                            1_000_000_000L / Math.max(1, refreshRate));
+                    sb.append(String.format(java.util.Locale.US,
+                            "\nClue red+ensamblado %.1f/%.1f · decode %.1f/%.1f · a pantalla %.1f/%.1f ms (p50/p99)",
+                            clueStats.netP50(), clueStats.netP99(),
+                            clueStats.decodeP50(), clueStats.decodeP99(),
+                            clueStats.toPresentP50(), clueStats.toPresentP99()));
+                    sb.append(String.format(java.util.Locale.US,
+                            "\nRepetidos %.1f%% · no presentados %.1f%% · audio descartado %d",
+                            clueStats.repeatedPct(), clueStats.unpresentedPct(),
+                            clueSession.counters().audioPacketsDropped.get()));
+                    sb.append(String.format(java.util.Locale.US,
+                            "\nEntrada→envío %.2f/%.2f ms (p50/p99)",
+                            clueStats.inputSendP50(), clueStats.inputSendP99()));
+                }
+
                 perfListener.onPerfUpdate(sb.toString());
             }
 

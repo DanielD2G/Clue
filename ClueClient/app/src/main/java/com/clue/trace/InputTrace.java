@@ -57,8 +57,13 @@ public final class InputTrace {
 
     /** Visits recorded events from oldest to newest. */
     public void forEach(InputVisitor v) {
+        forEachRecent(mask + 1, v);
+    }
+
+    /** Visits the newest {@code n} recorded events, oldest first. */
+    public void forEachRecent(int n, InputVisitor v) {
         long end = head.get();
-        long start = Math.max(0, end - (mask + 1));
+        long start = Math.max(0, end - Math.min(n, mask + 1));
         for (long i = start; i < end; i++) {
             int s = (int) (i & mask);
             v.visit(type[s], eventNs[s], sentNs[s]);

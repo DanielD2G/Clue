@@ -133,8 +133,13 @@ public final class FrameTrace {
 
     /** Visits recorded frames from oldest to newest. */
     public void forEach(FrameVisitor v) {
+        forEachRecent(mask + 1, v);
+    }
+
+    /** Visits the newest {@code n} recorded frames, oldest first. */
+    public void forEachRecent(int n, FrameVisitor v) {
         long end = head;
-        long start = Math.max(0, end - (mask + 1));
+        long start = Math.max(0, end - Math.min(n, mask + 1));
         for (long i = start; i < end; i++) {
             int s = (int) (i & mask);
             v.visit(frameNumber[s], firstPacketUs[s], completeUs[s], hostLatency01ms[s],
