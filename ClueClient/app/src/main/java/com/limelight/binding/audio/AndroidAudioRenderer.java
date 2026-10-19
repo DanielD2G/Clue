@@ -193,9 +193,24 @@ public class AndroidAudioRenderer implements AudioRenderer {
             // of pending audio data, so we do the above check to be able to bound
             // latency at 40 ms in that situation.
             track.write(audioData, 0, audioData.length);
+
+            // CLUE: audio health counters (underruns sampled about once per second)
+            com.clue.trace.SessionCounters c = com.clue.trace.TraceSession.activeCounters();
+            if (c != null) {
+                long played = c.audioPacketsPlayed.incrementAndGet();
+                if (played % 200 == 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    c.audioUnderruns.set(track.getUnderrunCount());
+                }
+            }
         }
         else {
             LimeLog.info("Too much pending audio data: " + MoonBridge.getPendingAudioDuration() +" ms");
+
+            // CLUE: count the drop
+            com.clue.trace.SessionCounters c = com.clue.trace.TraceSession.activeCounters();
+            if (c != null) {
+                c.audioPacketsDropped.incrementAndGet();
+            }
         }
     }
 

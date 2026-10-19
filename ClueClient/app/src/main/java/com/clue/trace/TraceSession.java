@@ -16,6 +16,7 @@ public final class TraceSession {
 
     private final FrameTrace frames = new FrameTrace(FRAME_CAPACITY);
     private final InputTrace input = new InputTrace(INPUT_CAPACITY);
+    private final SessionCounters counters = new SessionCounters();
 
     /**
      * Slot of the keyboard/mouse/touch event currently being dispatched on the UI thread,
@@ -90,6 +91,16 @@ public final class TraceSession {
         return input;
     }
 
+    public SessionCounters counters() {
+        return counters;
+    }
+
+    /** Counters of the active session, or null. */
+    public static SessionCounters activeCounters() {
+        TraceSession s = current;
+        return s != null ? s.counters : null;
+    }
+
     public void stop() {
         if (current == this) {
             current = null;
@@ -133,6 +144,9 @@ public final class TraceSession {
                 in[3] = Math.max(in[3], dt);
             }
         });
+        android.util.Log.i("ClueTrace", "session audio played=" + counters.audioPacketsPlayed.get()
+                + " dropped=" + counters.audioPacketsDropped.get()
+                + " underruns=" + counters.audioUnderruns.get());
         android.util.Log.i("ClueTrace", "session input events=" + in[0] + " sent=" + in[1]
                 + " avgEventToSentMs=" + (in[1] > 0 ? (in[2] / in[1]) / 1e6 : -1)
                 + " maxEventToSentMs=" + in[3] / 1e6);
