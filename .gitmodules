@@ -1,0 +1,3 @@
+[submodule "ClueClient/app/src/main/jni/moonlight-core/moonlight-common-c"]
+	path = ClueClient/app/src/main/jni/moonlight-core/moonlight-common-c
+	url = https://github.com/moonlight-stream/moonlight-common-c.git
