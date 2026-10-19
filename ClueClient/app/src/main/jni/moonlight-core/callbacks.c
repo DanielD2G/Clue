@@ -12,17 +12,17 @@
 
 #include <time.h>
 
-// CLUE: moonlight-common-c stamps decode units with CLOCK_MONOTONIC_RAW, while Java
-// (System.nanoTime, MediaCodec, Choreographer) uses CLOCK_MONOTONIC. Convert at the
-// bridge so every trace timestamp shares one clock. The offset is re-read per call
-// to follow NTP slewing.
-static uint64_t clueRawToMonoUs(uint64_t rawUs) {
-    struct timespec mono, raw;
+// CLUE: moonlight-common-c stamps decode units with LiGetMicroseconds(), which is
+// CLOCK_MONOTONIC_RAW measured from the library's own start time, while Java
+// (System.nanoTime, MediaCodec, Choreographer) uses absolute CLOCK_MONOTONIC.
+// Convert at the bridge so every trace timestamp shares one clock. The offset is
+// re-read per call, which covers both the different origin and NTP slewing.
+static uint64_t clueToMonoUs(uint64_t commonUs) {
+    struct timespec mono;
     clock_gettime(CLOCK_MONOTONIC, &mono);
-    clock_gettime(CLOCK_MONOTONIC_RAW, &raw);
-    int64_t offsetUs = ((int64_t)mono.tv_sec - (int64_t)raw.tv_sec) * 1000000LL +
-                       ((int64_t)mono.tv_nsec - (int64_t)raw.tv_nsec) / 1000LL;
-    return (uint64_t)((int64_t)rawUs + offsetUs);
+    int64_t monoNowUs = (int64_t)mono.tv_sec * 1000000LL + (int64_t)mono.tv_nsec / 1000LL;
+    int64_t offsetUs = monoNowUs - (int64_t)LiGetMicroseconds();
+    return (uint64_t)((int64_t)commonUs + offsetUs);
 }
 
 static OpusMSDecoder* Decoder;
@@ -183,7 +183,7 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
             ret = (*env)->CallStaticIntMethod(env, GlobalBridgeClass, BridgeDrSubmitDecodeUnitMethod,
                                               DecodedFrameBuffer, currentEntry->length, currentEntry->bufferType,
                                               decodeUnit->frameNumber, decodeUnit->frameType, (jchar)decodeUnit->frameHostProcessingLatency,
-                                              (jlong)clueRawToMonoUs(decodeUnit->receiveTimeUs), (jlong)clueRawToMonoUs(decodeUnit->enqueueTimeUs));
+                                              (jlong)clueToMonoUs(decodeUnit->receiveTimeUs), (jlong)clueToMonoUs(decodeUnit->enqueueTimeUs));
             if ((*env)->ExceptionCheck(env)) {
                 // We will crash here
                 (*JVM)->DetachCurrentThread(JVM);
@@ -204,7 +204,7 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
     ret = (*env)->CallStaticIntMethod(env, GlobalBridgeClass, BridgeDrSubmitDecodeUnitMethod,
                                        DecodedFrameBuffer, offset, BUFFER_TYPE_PICDATA,
                                        decodeUnit->frameNumber, decodeUnit->frameType, (jchar)decodeUnit->frameHostProcessingLatency,
-                                       (jlong)clueRawToMonoUs(decodeUnit->receiveTimeUs), (jlong)clueRawToMonoUs(decodeUnit->enqueueTimeUs));
+                                       (jlong)clueToMonoUs(decodeUnit->receiveTimeUs), (jlong)clueToMonoUs(decodeUnit->enqueueTimeUs));
     if ((*env)->ExceptionCheck(env)) {
         // We will crash here
         (*JVM)->DetachCurrentThread(JVM);
