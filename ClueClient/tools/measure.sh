@@ -58,14 +58,18 @@ done
 wait50="?"; beat="?"
 if [ -n "$session" ]; then
   mkdir -p "$traces/$session"
-  for f in frames.csv presenter.csv vsync.csv summary.txt; do
+  for f in frames.csv input.csv inputwire.csv presenter.csv vsync.csv summary.txt; do
     "$ADB" pull "/storage/emulated/0/Android/data/$pkg/files/traces/$session/$f" "$(cygpath -w "$traces/$session/$f")" >/dev/null 2>&1 || true
   done
-  wait50=$("$jdk/bin/java" "$here/TraceAnalyze.java" "$traces/$session" | grep "salida decoder->release" | grep -oE "p50= *[0-9.]+" | grep -oE "[0-9.]+$" || echo "?")
-  # Host/panel beat: median host frame interval vs vsync period
-  beat=$(awk -F, 'NR>1 && $1>0 { if (p) print $1-p; p=$1 }' "$traces/$session/presenter.csv" | sort -n |
-    awk -v vs="$vsync" '{ v[n++]=$1 } END { if (!n) { print "?"; exit } h=v[int(n/2)]/1e6; d=1000/h-1000/vs; if (d<0) d=-d;
-      if (d < 0.001) print "none"; else printf "%.1f", 1/d }')
+  wait50=$("$jdk/bin/java" "$(cygpath -w "$here/TraceAnalyze.java")" "$(cygpath -w "$traces/$session")" | grep "salida decoder->release" | grep -oE "p50= *[0-9.]+" | grep -oE "[0-9.]+$" || echo "?")
+  # Host/panel beat, both rates on the tablet's clock: frames arriving from the decoder per second
+  # (over the whole session) against the panel rate from the recorded vsync periods.
+  fps=$(awk -F, 'NR>1 && $2>0 { if (!f) f=$2; l=$2; c++ } END { if (c>1) printf "%.4f", (c-1)/((l-f)/1e9) }' "$traces/$session/presenter.csv")
+  hz=$(awk -F, 'NR>1 && $4>0 { print $4 }' "$traces/$session/vsync.csv" | sort -n | awk '{ v[n++]=$1 } END { if (n) printf "%.4f", 1e9/v[int(n/2)] }')
+  if [ -n "$fps" ] && [ -n "$hz" ]; then
+    beat=$(awk -v f="$fps" -v h="$hz" 'BEGIN { d=f-h; if (d<0) d=-d; if (d < 0.005) print ">200"; else printf "%.1f", 1/d }')
+    beat="$beat (stream ${fps} fps, panel ${hz} Hz)"
+  fi
 fi
 
 set -- $q2p
@@ -73,8 +77,8 @@ e2e="?"
 if [ "$wait50" != "?" ] && [ -n "$wait50" ]; then
   e2e=$(awk -v w="$wait50" -v q="$1" 'BEGIN { printf "%.1f", w+q }')
 fi
-line="$(date +%H:%M) $label: $cadence | queue->present p50=$1 p90=$2 p99=$3 | out->release p50=$wait50 | out->present p50~$e2e ms | beat ${beat}s | $session"
+line="$(date +%H:%M) $label: $cadence | queue->present p50=$1 p90=$2 p99=$3 | out->release p50=$wait50 | out->present p50~$e2e ms | beat ${beat} s | $session"
 echo "$line" | tee -a "$traces/measure-results.txt"
-if [ "$beat" != "?" ] && [ "$beat" != "none" ] && awk -v b="$beat" -v s="$secs" 'BEGIN { exit !(s < 3*b) }'; then
-  echo "WARNING: run shorter than 3 host/panel beats (${beat}s each); use at least $(awk -v b="$beat" 'BEGIN { printf "%d", 3*b+1 }') s"
+if [ "${beat%% *}" != "?" ] && [ "${beat%% *}" != ">200" ] && awk -v b="${beat%% *}" -v s="$secs" 'BEGIN { exit !(s < 3*b) }'; then
+  echo "WARNING: run shorter than 3 host/panel beats (${beat}s each); use at least $(awk -v b="${beat%% *}" 'BEGIN { printf "%d", 3*b+1 }') s"
 fi

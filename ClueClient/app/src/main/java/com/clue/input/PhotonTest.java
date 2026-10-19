@@ -82,7 +82,10 @@ public final class PhotonTest {
     private HandlerThread thread;
     private Handler handler;
     private volatile boolean stopped;
-    private int index;
+    // Browsers expose a gamepad to the page only after its first button press, so the first
+    // WARMUP_PRESSES presses are sent but not measured.
+    static final int WARMUP_PRESSES = 2;
+    private int index = -WARMUP_PRESSES;
 
     public PhotonTest(NvConnection conn, SurfaceView view, int streamWidth, int streamHeight,
                       int presses, Listener listener) {
@@ -124,12 +127,16 @@ public final class PhotonTest {
             return;
         }
         final int i = index;
-        pressNs[i] = System.nanoTime();
+        if (i >= 0) {
+            pressNs[i] = System.nanoTime();
+        }
         conn.sendControllerInput((short) 0, (short) 1, ControllerPacket.A_FLAG,
                 (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0);
         handler.postDelayed(() -> conn.sendControllerInput((short) 0, (short) 1, 0,
                 (byte) 0, (byte) 0, (short) 0, (short) 0, (short) 0, (short) 0), HOLD_MS);
-        poll(i);
+        if (i >= 0) {
+            poll(i);
+        }
         handler.postDelayed(() -> {
             index++;
             pressNext();
