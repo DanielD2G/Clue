@@ -1544,6 +1544,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             "\nRepetidos %.1f%% · no presentados %.1f%% · audio descartado %d",
                             clueStats.repeatedPct(), clueStats.unpresentedPct(),
                             clueSession.counters().audioPacketsDropped.get()));
+                    long clueAudioUs = clueSession.counters().audioOutputLatencyUs();
+                    if (clueAudioUs >= 0) {
+                        sb.append(String.format(java.util.Locale.US, " · audio %.1f ms, %d cortes",
+                                clueAudioUs / 1000.0, clueSession.counters().audioUnderruns.get()));
+                    }
                     sb.append(String.format(java.util.Locale.US,
                             "\nEntrada→envío %.2f/%.2f ms (p50/p99)",
                             clueStats.inputSendP50(), clueStats.inputSendP99()));

@@ -48,6 +48,7 @@ public class TraceWriterTest {
         List<String> summary = Files.readAllLines(new File(dir, "summary.txt").toPath(), StandardCharsets.UTF_8);
         assertTrue(summary.contains("fps=120"));
         assertTrue(summary.contains("audioPacketsDropped=4"));
+        assertTrue(summary.contains("audioOutputLatencyUs=-1"));
         assertTrue(summary.contains("ptsMisses=0"));
     }
 

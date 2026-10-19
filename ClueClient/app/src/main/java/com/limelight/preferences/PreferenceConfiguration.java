@@ -395,6 +395,16 @@ public class PreferenceConfiguration {
                 .apply();
     }
 
+    // CLUE: measurement scripts A/B the AAudio output (am start --ez clue_aaudio true|false)
+    public static void applyClueAAudioExtra(Context context, android.content.Intent intent) {
+        if (intent == null || !intent.hasExtra(com.clue.audio.ClueAudio.PREF)) {
+            return;
+        }
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean(com.clue.audio.ClueAudio.PREF, intent.getBooleanExtra(com.clue.audio.ClueAudio.PREF, true))
+                .apply();
+    }
+
     public static int getDefaultBitrate(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         return getDefaultBitrate(

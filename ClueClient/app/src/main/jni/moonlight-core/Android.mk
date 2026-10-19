@@ -9,6 +9,8 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := moonlight-core
 
 LOCAL_SRC_FILES := clue_input_trace.c \
+                   clue_aaudio.c \
+                   clue_audio_ring.c \
                    moonlight-common-c/src/AudioStream.c \
                    moonlight-common-c/src/ByteBuffer.c \
                    moonlight-common-c/src/Connection.c \
@@ -57,7 +59,7 @@ ifeq ($(NDK_DEBUG),1)
 LOCAL_CFLAGS += -DLC_DEBUG
 endif
 
-LOCAL_LDLIBS := -llog
+LOCAL_LDLIBS := -llog -ldl # CLUE: -ldl to load libaaudio.so (API 26+) at runtime
 
 LOCAL_STATIC_LIBRARIES := libopus libcrypto cpufeatures
 LOCAL_LDFLAGS += -Wl,--exclude-libs,ALL
