@@ -57,4 +57,16 @@ public class TraceWriterTest {
         assertFalse(TraceWriter.write(new FrameTrace(8), new InputTrace(8), new SessionCounters(),
                 notADir, Collections.emptyMap()));
     }
+
+    @Test
+    public void writesInputWireCsv() throws Exception {
+        long[] rows = {1, 100, 250, 2, 300, 310};
+        File dir = tmp.newFolder("wire");
+        assertTrue(TraceWriter.writeInputWire(rows, 2, dir));
+        List<String> lines = Files.readAllLines(new File(dir, "inputwire.csv").toPath(), StandardCharsets.UTF_8);
+        assertEquals("type,enqueueNs,wireNs", lines.get(0));
+        assertEquals("1,100,250", lines.get(1));
+        assertEquals("2,300,310", lines.get(2));
+        assertEquals(3, lines.size());
+    }
 }

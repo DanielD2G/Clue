@@ -93,6 +93,31 @@ public final class TraceWriter {
         }
     }
 
+    static final String INPUT_WIRE_HEADER = "type,enqueueNs,wireNs";
+
+    /**
+     * Writes inputwire.csv from {@code n} rows of (type, enqueueNs, wireNs) packed in {@code rows}.
+     * Returns false (without throwing) on any failure.
+     */
+    public static boolean writeInputWire(long[] rows, int n, File dir) {
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                return false;
+            }
+            StringBuilder sb = new StringBuilder(n * 32 + 32);
+            sb.append(INPUT_WIRE_HEADER).append('\n');
+            for (int i = 0; i < n; i++) {
+                sb.append(rows[3 * i]).append(',').append(rows[3 * i + 1]).append(',').append(rows[3 * i + 2]).append('\n');
+            }
+            try (Writer w = open(new File(dir, "inputwire.csv"))) {
+                w.append(sb);
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
     static final String PRESENTER_HEADER = "hostNs,outNs,targetNs";
     static final String VSYNC_HEADER = "callbackNs,deadlineNs,expectedPresentNs,periodNs";
 

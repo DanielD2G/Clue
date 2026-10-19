@@ -19,6 +19,13 @@ public final class TraceSession {
     private final SessionCounters counters = new SessionCounters();
     private final PresenterTrace presenter = new PresenterTrace(1 << 15);
 
+    // Input packets stamped on the wire by the native layer, accumulated as (type, enqueueNs,
+    // wireNs) triples. Drained from the overlay thread and at stop, never on a hot path.
+    static final int WIRE_CAPACITY = 1 << 16;
+    private final long[] wireRows = new long[3 * WIRE_CAPACITY];
+    private final long[] wireScratch = new long[3 * 4096];
+    private int wireCount;
+
     /**
      * Slot of the keyboard/mouse/touch event currently being dispatched on the UI thread,
      * or -1. Game marks it on entry; NvConnection marks it sent after handing it to
@@ -115,10 +122,38 @@ public final class TraceSession {
         return s != null ? s.counters : null;
     }
 
+    /** Pulls newly sent input packets from the native ring; extra rows past capacity are dropped. */
+    public synchronized void drainInputWire() {
+        int n;
+        try {
+            n = com.limelight.nvstream.jni.MoonBridge.clueDrainInputWire(wireScratch);
+        } catch (UnsatisfiedLinkError e) {
+            return; // unit tests and builds without the native library
+        }
+        int room = Math.min(n, WIRE_CAPACITY - wireCount);
+        System.arraycopy(wireScratch, 0, wireRows, 3 * wireCount, 3 * room);
+        wireCount += room;
+    }
+
+    /**
+     * Enqueue-to-wire delays (ns) of the newest {@code max} input packets of {@code type}
+     * (0 = any) into {@code out}; returns how many were written.
+     */
+    public synchronized int recentInputWireNs(int type, long[] out) {
+        int n = 0;
+        for (int i = wireCount - 1; i >= 0 && n < out.length; i--) {
+            if (type == 0 || wireRows[3 * i] == type) {
+                out[n++] = wireRows[3 * i + 2] - wireRows[3 * i + 1];
+            }
+        }
+        return n;
+    }
+
     public void stop() {
         if (current == this) {
             current = null;
         }
+        drainInputWire();
         logSummary();
         writeAsync();
     }
@@ -135,7 +170,8 @@ public final class TraceSession {
         new Thread(() -> {
             java.io.File dir = new java.io.File(base, name);
             boolean ok = TraceWriter.write(frames, input, counters, dir, meta)
-                    && TraceWriter.writePresenter(presenter, dir);
+                    && TraceWriter.writePresenter(presenter, dir)
+                    && TraceWriter.writeInputWire(wireRows, wireCount, dir);
             android.util.Log.i("ClueTrace", (ok ? "trace written to " : "trace write FAILED for ") + dir);
         }, "Clue trace writer").start();
     }

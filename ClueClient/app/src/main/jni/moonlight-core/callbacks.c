@@ -12,6 +12,8 @@
 
 #include <time.h>
 
+#include "clue_input_trace.h"
+
 // CLUE: moonlight-common-c stamps decode units with LiGetMicroseconds(), which is
 // CLOCK_MONOTONIC_RAW measured from the library's own start time, while Java
 // (System.nanoTime, MediaCodec, Choreographer) uses absolute CLOCK_MONOTONIC.
@@ -515,6 +517,8 @@ Java_com_limelight_nvstream_jni_MoonBridge_startConnection(JNIEnv *env, jclass c
     if (hasFastAes()) {
         streamConfig.encryptionFlags = ENCFLG_ALL;
     }
+
+    clueInputTraceStart(); // CLUE: stamp input packets as they leave for the host
 
     int ret = LiStartConnection(&serverInfo,
                                 &streamConfig,

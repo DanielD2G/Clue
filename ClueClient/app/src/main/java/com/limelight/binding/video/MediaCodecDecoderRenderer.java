@@ -124,6 +124,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private final com.clue.video.PresentPolicy cluePolicy = new com.clue.video.PresentPolicy(
             com.clue.video.PresentPolicy.DEFAULT_SAFETY_NS, com.clue.video.PresentPolicy.DEFAULT_HYSTERESIS_NS);
     private com.clue.video.ClueVsyncSource clueVsync;
+    private final long[] clueWireScratch = new long[1024]; // CLUE: overlay input-to-wire window
     // CLUE: host capture time per codec PTS, written by the input thread and read at decode-out.
     // Each slot is an independent long pair; a torn read only makes one lookup miss.
     private static final int CLUE_HOST_SLOTS = 32;
@@ -1546,6 +1547,15 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                     sb.append(String.format(java.util.Locale.US,
                             "\nEntrada→envío %.2f/%.2f ms (p50/p99)",
                             clueStats.inputSendP50(), clueStats.inputSendP99()));
+                    clueSession.drainInputWire();
+                    int wireN = clueSession.recentInputWireNs(0, clueWireScratch);
+                    if (wireN > 0) {
+                        java.util.Arrays.sort(clueWireScratch, 0, wireN);
+                        sb.append(String.format(java.util.Locale.US,
+                                "\nEncolado→aire %.2f/%.2f ms (p50/p99, %d paquetes)",
+                                clueWireScratch[wireN / 2] / 1e6,
+                                clueWireScratch[Math.min(wireN - 1, (int) (wireN * 0.99))] / 1e6, wireN));
+                    }
                     if (clueMode()) {
                         sb.append(String.format(java.util.Locale.US,
                                 "\nPresentador Clue: margen %.2f ms · remapeos %d",

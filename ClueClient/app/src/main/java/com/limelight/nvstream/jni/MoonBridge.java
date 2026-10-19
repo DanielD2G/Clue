@@ -354,6 +354,9 @@ public class MoonBridge {
 
     public static native void stopConnection();
 
+    // CLUE: drains input packets stamped on the wire as (type, enqueueNs, wireNs) triples
+    public static native int clueDrainInputWire(long[] out);
+
     public static native void interruptConnection();
 
     public static native void sendMouseMove(short deltaX, short deltaY);
