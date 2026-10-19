@@ -149,6 +149,7 @@ public class PreferenceConfiguration {
     public boolean touchscreenTrackpad;
     public MoonBridge.AudioConfiguration audioConfiguration;
     public int framePacing;
+    public boolean clueAsyncDecode; // CLUE: async MediaCodec output path (A/B experiment)
     public boolean absoluteMouseMode;
     public boolean enableAudioFx;
     public boolean reduceRefreshRate;
@@ -383,6 +384,21 @@ public class PreferenceConfiguration {
         if (changed) {
             editor.apply();
         }
+    }
+
+    // CLUE: async MediaCodec output path, only used with the Clue presenter (off until measured)
+    public static final String CLUE_ASYNC_DECODE_PREF_STRING = "clue_async_decode";
+
+    // CLUE: measurement scripts switch the async decode path at launch
+    // (am start --ez clue_async_decode <bool>); the choice persists until changed again.
+    public static void applyClueAsyncDecodeExtra(Context context, android.content.Intent intent) {
+        if (intent == null || !intent.hasExtra(CLUE_ASYNC_DECODE_PREF_STRING)) {
+            return;
+        }
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean(CLUE_ASYNC_DECODE_PREF_STRING,
+                        intent.getBooleanExtra(CLUE_ASYNC_DECODE_PREF_STRING, false))
+                .apply();
     }
 
     // CLUE: only the pacing values the settings screen itself offers are accepted
@@ -660,6 +676,7 @@ public class PreferenceConfiguration {
         config.gamepadTouchpadAsMouse = prefs.getBoolean(GAMEPAD_TOUCHPAD_AS_MOUSE_PREF_STRING, DEFAULT_GAMEPAD_TOUCHPAD_AS_MOUSE);
         config.gamepadMotionSensors = prefs.getBoolean(GAMEPAD_MOTION_SENSORS_PREF_STRING, DEFAULT_GAMEPAD_MOTION_SENSORS);
         config.gamepadMotionSensorsFallbackToDevice = prefs.getBoolean(GAMEPAD_MOTION_FALLBACK_PREF_STRING, DEFAULT_GAMEPAD_MOTION_FALLBACK);
+        config.clueAsyncDecode = prefs.getBoolean(CLUE_ASYNC_DECODE_PREF_STRING, false); // CLUE
 
         return config;
     }

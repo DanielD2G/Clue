@@ -139,6 +139,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putInt("clue_photon_test", getIntent().getIntExtra("clue_photon_test", 0)).apply();
         }
+        // CLUE: and switch the async decode path for A/B runs (--ez clue_async_decode <bool>)
+        PreferenceConfiguration.applyClueAsyncDecodeExtra(this, getIntent());
 
         // Set default preferences if we've never been run
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false);

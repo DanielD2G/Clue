@@ -131,6 +131,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private final long[] clueCodecPtsUs = new long[CLUE_HOST_SLOTS];
     private final long[] clueHostTimeUs = new long[CLUE_HOST_SLOTS];
     private volatile int clueHostHead;
+    // CLUE: async MediaCodec mode (clue_async_decode, Clue presenter only). Codec callbacks run on
+    // the Choreographer thread, which therefore also owns the output side of the codec; input
+    // indices reach the submit thread through this ring.
+    private boolean clueAsync;
+    private final com.clue.video.InputIndexRing clueInputRing = new com.clue.video.InputIndexRing(256);
+    private static final long CLUE_INPUT_WAIT_NS = 10_000_000L; // same bound as dequeueInputBuffer(10000)
 
     private void clueRememberHostTime(long codecPtsUs, long hostTimeUs) {
         int slot = clueHostHead;
@@ -559,6 +565,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         LimeLog.info("Configuring with format: "+format);
 
+        // CLUE: async mode must be selected before every configure (also after stop()/reset())
+        if (clueAsync) {
+            videoDecoder.setCallback(clueAsyncCallback, choreographerHandler);
+        }
+
         videoDecoder.configure(format, renderTarget.getSurface(), null, 0);
 
         configuredFormat = format;
@@ -739,6 +750,13 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.videoFormat = format;
         this.refreshRate = redrawRate;
 
+        // CLUE: codec callbacks need their looper before the first configure
+        clueAsync = prefs.clueAsyncDecode && clueMode();
+        LimeLog.info("Clue async decode: " + clueAsync);
+        if (clueAsync) {
+            clueEnsureChoreographerThread();
+        }
+
         return initializeDecoder(false);
     }
 
@@ -757,6 +775,11 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 // If we have no choreographer thread, we can just mark that as quiesced right now.
                 codecRecoveryThreadQuiescedFlags |= CR_FLAG_CHOREOGRAPHER;
             }
+            if (clueAsync) {
+                // CLUE: no renderer thread in async mode; the Choreographer thread runs the
+                // output callbacks and quiesces for both
+                codecRecoveryThreadQuiescedFlags |= CR_FLAG_RENDER_THREAD;
+            }
 
             codecRecoveryThreadQuiescedFlags |= quiescenceFlag;
 
@@ -766,6 +789,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 nextInputBuffer = null;
                 nextInputBufferIndex = -1;
                 outputBufferQueue.clear();
+                clueInputRing.clear(); // CLUE: producer and consumer are both quiesced here
+
+                // CLUE: flush() keeps already-posted async callbacks (stale indices) and reset()
+                // is not documented to drop them; only stop() removes them, so async mode always
+                // restarts instead of flushing, and recreates instead of resetting.
+                if (clueAsync && codecRecoveryType.get() == CR_RECOVERY_TYPE_FLUSH) {
+                    codecRecoveryType.set(CR_RECOVERY_TYPE_RESTART);
+                }
 
                 // If we just need a flush, do so now with all threads quiesced.
                 if (codecRecoveryType.get() == CR_RECOVERY_TYPE_FLUSH) {
@@ -812,7 +843,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                 // For "non-recoverable" exceptions on L+, we can call reset() to recover
                 // without having to recreate the entire decoder again.
-                if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET) {
+                if (codecRecoveryType.get() == CR_RECOVERY_TYPE_RESET && !clueAsync) { // CLUE: see above
                     LimeLog.warning("Trying to reset decoder after CodecException");
                     try {
                         videoDecoder.reset();
@@ -1061,21 +1092,30 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU;
     }
 
+    // CLUE: split out of startChoreographerThread() so async mode can create it before configure
+    private void clueEnsureChoreographerThread() {
+        if (choreographerHandlerThread != null) {
+            return;
+        }
+
+        // We use a separate thread to avoid any main thread delays from delaying rendering
+        // CLUE: the vsync thread feeds the presenter (and runs async codec callbacks), so it runs at display priority
+        choreographerHandlerThread = new HandlerThread("Video - Choreographer", clueMode() ?
+                Process.THREAD_PRIORITY_URGENT_DISPLAY :
+                Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
+        choreographerHandlerThread.start();
+        choreographerHandler = new Handler(choreographerHandlerThread.getLooper());
+    }
+
     private void startChoreographerThread() {
         if (prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED && !clueMode()) { // CLUE
             // Not using Choreographer in this pacing mode
             return;
         }
 
-        // We use a separate thread to avoid any main thread delays from delaying rendering
-        // CLUE: the vsync thread feeds the presenter, so it runs at display priority
-        choreographerHandlerThread = new HandlerThread("Video - Choreographer", clueMode() ?
-                Process.THREAD_PRIORITY_URGENT_DISPLAY :
-                Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
-        choreographerHandlerThread.start();
+        clueEnsureChoreographerThread(); // CLUE: async mode already created it in setup()
 
         // Start the frame callbacks
-        choreographerHandler = new Handler(choreographerHandlerThread.getLooper());
         choreographerHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -1094,6 +1134,92 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             }
         });
     }
+
+    // CLUE: async-mode counterpart of the renderer thread's Clue presenter branch. Runs on the
+    // Choreographer thread (URGENT_DISPLAY), so each output buffer is released the moment the codec
+    // signals it instead of when a polling dequeueOutputBuffer() returns. Callbacks from a codec
+    // instance that recovery already replaced are ignored.
+    private final MediaCodec.Callback clueAsyncCallback = new MediaCodec.Callback() {
+        @Override
+        public void onInputBufferAvailable(MediaCodec codec, int index) {
+            if (codec != videoDecoder) {
+                return;
+            }
+            if (!clueInputRing.offer(index)) {
+                // Cannot happen with fewer than 256 input buffers; the index is lost until recovery
+                LimeLog.warning("Clue input index ring full, dropping " + index);
+            }
+        }
+
+        @Override
+        public void onOutputBufferAvailable(MediaCodec codec, int index, BufferInfo info) {
+            if (codec != videoDecoder || stopping) {
+                // Buffers of a stopped or replaced codec are reclaimed when it is released
+                return;
+            }
+            try {
+                long presentationTimeUs = info.presentationTimeUs;
+
+                com.clue.trace.FrameTrace clueFt = com.clue.trace.TraceSession.activeFrames();
+                if (clueFt != null) {
+                    clueFt.onDecodeOutput(presentationTimeUs, System.nanoTime());
+                    clueRecordPresenterInput(presentationTimeUs);
+                }
+                if (index < cluePtsByOutputIndex.length) {
+                    cluePtsByOutputIndex[index] = presentationTimeUs;
+                }
+
+                numFramesOut++;
+
+                // Same target as the sync Clue presenter branch. No draining here: each output
+                // gets its own callback, and a newer buffer for the same vsync supersedes an older
+                // one in SurfaceFlinger.
+                long clueHostNs = clueHostTimeNs(presentationTimeUs);
+                long clueTargetNs = clueHostNs < 0 ? 0 :
+                        cluePolicy.targetFor(System.nanoTime(), clueHostNs);
+                videoDecoder.releaseOutputBuffer(index,
+                        clueTargetNs != 0 ? clueTargetNs : System.nanoTime());
+
+                if (clueFt != null) {
+                    clueFt.onRelease(presentationTimeUs, System.nanoTime(), clueTargetNs);
+                }
+
+                activeWindowVideoStats.totalFramesRendered++;
+
+                // Add delta time to the totals (excluding probable outliers)
+                long delta = SystemClock.uptimeMillis() - (presentationTimeUs / 1000);
+                if (delta >= 0 && delta < 1000) {
+                    activeWindowVideoStats.decoderTimeMs += delta;
+                    if (!USE_FRAME_RENDER_TIME) {
+                        activeWindowVideoStats.totalTimeMs += delta;
+                    }
+                }
+            } catch (IllegalStateException e) {
+                handleDecoderException(e);
+            } finally {
+                doCodecRecoveryIfRequired(CR_FLAG_CHOREOGRAPHER);
+            }
+        }
+
+        @Override
+        public void onError(MediaCodec codec, CodecException e) {
+            if (codec != videoDecoder) {
+                return;
+            }
+            handleDecoderException(e);
+            doCodecRecoveryIfRequired(CR_FLAG_CHOREOGRAPHER);
+        }
+
+        @Override
+        public void onOutputFormatChanged(MediaCodec codec, MediaFormat format) {
+            if (codec != videoDecoder) {
+                return;
+            }
+            LimeLog.info("Output format changed");
+            outputFormat = format;
+            LimeLog.info("New output format: " + outputFormat);
+        }
+    };
 
     private void startRendererThread()
     {
@@ -1242,6 +1368,16 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         try {
             // If we don't have an input buffer index yet, fetch one now
             while (nextInputBufferIndex < 0 && !stopping) {
+                if (clueAsync) {
+                    // CLUE: dequeueInputBuffer() is illegal in async mode; take an index the codec
+                    // callback announced. A dead codec announces nothing, so leave the wait as soon
+                    // as recovery is requested and quiesce below like the sync path does on its exception.
+                    if (codecRecoveryType.get() != CR_RECOVERY_TYPE_NONE) {
+                        break;
+                    }
+                    nextInputBufferIndex = clueInputRing.take(CLUE_INPUT_WAIT_NS);
+                    continue;
+                }
                 nextInputBufferIndex = videoDecoder.dequeueInputBuffer(10000);
             }
 
@@ -1296,7 +1432,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     @Override
     public void start() {
-        startRendererThread();
+        if (!clueAsync) { // CLUE: async mode delivers output through clueAsyncCallback instead
+            startRendererThread();
+        }
         startChoreographerThread();
     }
 
@@ -1355,6 +1493,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         // Wait for the renderer thread to shut down
         try {
+            if (rendererThread != null) // CLUE: absent in async mode
             rendererThread.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
