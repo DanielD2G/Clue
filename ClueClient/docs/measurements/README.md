@@ -4,8 +4,8 @@ Ninguna optimización entra sin datos (ver [AGENTS.md](../../AGENTS.md)). Este e
 
 ## Condiciones fijas
 
-- **Host:** Vibepollo 2.0.x en modo **Desktop**, con preset NVENC P4 + AQ espacial + split-frame forzado. El cliente pide 2560×1600 a 120 fps y 80 Mbps HEVC.
-- **Contenido:** TestUFO (`https://www.testufo.com`) a pantalla completa con F11 en el display del stream, sin otras ventanas encima. Usar siempre la misma configuración de UFOs y velocidad.
+- **Host:** Vibepollo 2.0.x en modo **Desktop**, con `capture = ddx` (con WGC, Vibepollo 2.0.1 entregó unos 33 fps). Anotar en cada medición el preset de encoder activo. El cliente pide 2560×1600 a 120 fps y 80 Mbps HEVC.
+- **Contenido:** la misma página de movimiento a pantalla completa en todas las corridas (TestUFO o una página sintética con contador de frames), sin otras ventanas encima.
 - **Red:** el Wi-Fi de siempre. Durante las corridas no se usan otras descargas ni otros streams.
 - **Tablet:** la pantalla queda encendida durante toda la corrida (opciones de desarrollador → "Mantener la pantalla activa").
 
