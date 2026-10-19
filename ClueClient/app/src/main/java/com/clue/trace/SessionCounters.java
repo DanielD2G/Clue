@@ -35,6 +35,13 @@ public final class SessionCounters {
     public final AtomicLong audioRingSetpointUs = new AtomicLong(-1);
     /** AAudio buffer size in frames (starts at 2 bursts, grows on XRuns). */
     public final AtomicLong audioBufferFrames = new AtomicLong();
+    /** The same leaving out the first 3 s after the stream opens (start-up effects). */
+    public final AtomicLong audioRingSteadyUs = new AtomicLong(-1);
+    public final AtomicLong audioUnderrunsSteady = new AtomicLong();
+    public final AtomicLong audioDriftFramesDroppedSteady = new AtomicLong();
+    public final AtomicLong audioDriftFramesInsertedSteady = new AtomicLong();
+    /** Start-up backlog discarded at once instead of drained by drift control (frames). */
+    public final AtomicLong audioStartupTrimmedFrames = new AtomicLong();
     /** "aaudio-exclusive", "aaudio-shared" or "audiotrack". */
     public volatile String audioPath = "none";
 
@@ -42,6 +49,16 @@ public final class SessionCounters {
     public long audioOutputLatencyUs() {
         long n = audioHwLatencySamples.get();
         long ring = audioRingUs.get();
+        if (n == 0 || ring < 0) {
+            return -1;
+        }
+        return ring + audioHwLatencySumUs.get() / n;
+    }
+
+    /** Same with the steady-state ring mean; -1 if unknown. */
+    public long audioOutputLatencySteadyUs() {
+        long n = audioHwLatencySamples.get();
+        long ring = audioRingSteadyUs.get();
         if (n == 0 || ring < 0) {
             return -1;
         }

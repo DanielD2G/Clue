@@ -200,12 +200,14 @@ typedef struct {
     int jitterUs;
     int burstEvery;
     int spikeEvery;     // > 0: about one packet in this many is 8 ms later still (Wi-Fi retries)
+    int backlogPackets; // packets the host queued before the start, all delivered at once
     int callbackFrames;
     int seconds;
     int warmupSeconds;
 } SCENARIO;
 
 typedef struct {
+    long long trimmed;               // discarded at once by the start-up trim
     long long drops, dups;           // after warm-up
     int underruns;                   // after warm-up
     int mixedWindows;                // windows with both drops and duplicates (whole run)
@@ -232,11 +234,13 @@ static RESULT simulate(const SCENARIO* sc) {
     double nextArrival = 0;
     for (;;) {
         // arrival of packet k
-        long long releaseIdx = sc->burstEvery > 1 ? (k / sc->burstEvery + 1) * sc->burstEvery - 1 : k;
+        long long releaseIdx = (sc->burstEvery > 1 ? (k / sc->burstEvery + 1) * sc->burstEvery - 1 : k)
+                               - sc->backlogPackets;
         lcg = lcg * 1103515245u + 12345u;
         double delay = 2e6 + (sc->jitterUs > 0 ? (double)((lcg >> 8) % (unsigned)sc->jitterUs) * 1e3 : 0);
         if (sc->spikeEvery > 0 && lcg % (unsigned)sc->spikeEvery == 7) delay += 8e6;
         nextArrival = releaseIdx * packetNs + delay;
+        if (nextArrival < 2e6) nextArrival = 2e6; // the backlog arrives together with the first packet
         if (nextArrival < prevArrival) nextArrival = prevArrival;
 
         // consumer callbacks that come before it
@@ -265,6 +269,9 @@ static RESULT simulate(const SCENARIO* sc) {
             underrunsSeen = underruns;
             ClueDriftOnUnderrun(&d);
         }
+        int trim = ClueDriftStartupTrim(&d, ring, PACKET); // the callback discards it right away
+        ring -= trim;
+        res.trimmed += trim;
         int adj = ClueDriftOnPacket(&d, ring, PACKET);
         if (d.windowCount == 0) windowSign = 0; // a window ended inside this call
         if (adj != 0) {
@@ -285,8 +292,8 @@ static RESULT simulate(const SCENARIO* sc) {
 }
 
 static void report(const char* name, const RESULT* r) {
-    printf("  %-34s drops %5lld dups %5lld underruns %d mixed %d ring %.1f ms target %d\n",
-           name, r->drops, r->dups, r->underruns, r->mixedWindows, r->meanOccupancyMs, r->target);
+    printf("  %-34s trimmed %5lld drops %5lld dups %5lld underruns %d mixed %d ring %.1f ms target %d\n",
+           name, r->trimmed, r->drops, r->dups, r->underruns, r->mixedWindows, r->meanOccupancyMs, r->target);
 }
 
 // The device failure: bursty 5 ms packets with +-3 ms jitter and no clock drift made the old
@@ -297,8 +304,56 @@ static void jitteryButStableArrivalsNeedAlmostNoCorrection(void) {
     RESULT r = simulate(&sc);
     report("jitter +-3 ms, bursts, 0 ppm", &r);
     CHECK(r.drops + r.dups <= 100); // over 100 s
+    CHECK(r.trimmed == 0);          // start-up jitter is not a backlog
     CHECK(r.mixedWindows == 0);
     CHECK(r.underruns == 0);
+}
+
+// moonlight-common-c hands over ~150 ms the host queued before the stream was ready. Draining it
+// gradually cost ~7100 frames of drift drops and a 25 ms session-mean ring on the device.
+static void startBacklogIsDiscardedAtOnce(void) {
+    SCENARIO sc = { .ppm = 0, .jitterUs = 6000, .burstEvery = 2, .backlogPackets = 30,
+                    .callbackFrames = BURST, .seconds = 60, .warmupSeconds = 3 };
+    RESULT r = simulate(&sc);
+    report("150 ms start backlog, jitter +-3 ms", &r);
+    CHECK(r.trimmed >= 6000);           // most of the 7200 frames, at once
+    CHECK(r.drops + r.dups <= 100);     // nothing left to drain
+    CHECK(r.underruns == 0);
+    CHECK(r.meanOccupancyMs <= 14.0);   // vs ~48 ms when drained gradually
+
+    SCENARIO clean = { .ppm = 0, .jitterUs = 500, .burstEvery = 1, .backlogPackets = 30,
+                       .callbackFrames = BURST, .seconds = 60, .warmupSeconds = 3 };
+    r = simulate(&clean);
+    report("150 ms start backlog, clean link", &r);
+    CHECK(r.trimmed >= 6000);
+    CHECK(r.underruns == 0);
+    CHECK(r.meanOccupancyMs <= 10.0);
+}
+
+static void startupTrimOnlyActsOnARealBacklogDuringTheGracePeriod(void) {
+    CLUE_AUDIO_DRIFT d;
+    ClueDriftInit(&d, BURST, PACKET, RATE);
+    int level = 192 + PACKET; // target + packet, no setpoint measured yet
+    CHECK(d.startExcess == 960);
+    CHECK(ClueDriftStartupTrim(&d, level + 960, PACKET) == 0);           // 20 ms of jitter: kept
+    CHECK(ClueDriftStartupTrim(&d, level + 7200, PACKET) == 7200 - 192); // backlog: down to level + burst
+    CHECK(d.haveFilter == 0 && d.windowCount == 0);
+    for (int i = 0; i < d.gracePackets; i++) ClueDriftOnPacket(&d, level, PACKET);
+    CHECK(ClueDriftStartupTrim(&d, level + 7200, PACKET) == 0);          // after 2 s drift control owns it
+    ClueDriftRestart(&d);
+    CHECK(ClueDriftStartupTrim(&d, level + 7200, PACKET) > 0);           // reopen: a new start
+}
+
+static void ringSkipDiscardsTheOldestFrames(void) {
+    int16_t buf[8];
+    CLUE_AUDIO_RING r;
+    ClueRingInit(&r, buf, 8, 1);
+    int16_t in[6] = { 1, 2, 3, 4, 5, 6 }, out[6];
+    ClueRingWrite(&r, in, 6);
+    CHECK(ClueRingSkip(&r, 4) == 4);
+    CHECK(ClueRingRead(&r, out, 6) == 2);
+    CHECK(out[0] == 5 && out[1] == 6);
+    CHECK(ClueRingSkip(&r, 4) == 0);
 }
 
 // Same, plus an 8 ms late packet about every 1.5 s. This is the pattern that reproduces the
@@ -345,6 +400,7 @@ static void cleanLinkKeepsTheRingShort(void) {
     CHECK(r.meanOccupancyMs > 0 && r.meanOccupancyMs <= 8.5); // 1 burst of margin + packet/callback phase
     CHECK(r.underruns == 0);
     CHECK(r.drops + r.dups <= 20);
+    CHECK(r.trimmed == 0);
 }
 
 // ---------------------------------------------------------------- applying a decision
@@ -388,6 +444,8 @@ int main(void) {
     ringWrapsAndKeepsOrder();
     ringFullTakesOnlyWhatFitsAndEmptyReadsNothing();
     ringCountersSurviveUnsignedWrap();
+    ringSkipDiscardsTheOldestFrames();
+    startupTrimOnlyActsOnARealBacklogDuringTheGracePeriod();
     driftStartsAtOneBurstOrTwoMs();
     underrunsDuringTheFirstTwoSecondsDoNotRaiseTheTarget();
     underrunRaisesTargetUpToTheCap();
@@ -398,6 +456,7 @@ int main(void) {
     driftStepNeverExceedsAnEighthOfThePacket();
     jitteryButStableArrivalsNeedAlmostNoCorrection();
     occasionalLatePacketsDoNotMakeItChase();
+    startBacklogIsDiscardedAtOnce();
     tracksHostClockFasterThanTheDac();
     tracksHostClockSlowerThanTheDac();
     cleanLinkKeepsTheRingShort();

@@ -363,6 +363,7 @@ public class MoonBridge {
     public static native void clueAudioStart();
     public static native void clueAudioClose();
     public static native int clueAudioGetStats(long[] out);
+    public static native void clueAudioLogInterval(); // logcat ClueAudio: what happened since the last call
 
     public static native void interruptConnection();
 

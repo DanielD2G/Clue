@@ -66,6 +66,15 @@ void ClueRingFlush(CLUE_AUDIO_RING* r) {
     atomic_store_explicit(&r->tail, head, memory_order_release);
 }
 
+uint32_t ClueRingSkip(CLUE_AUDIO_RING* r, uint32_t frames) {
+    uint32_t tail = atomic_load_explicit(&r->tail, memory_order_relaxed);
+    uint32_t head = atomic_load_explicit(&r->head, memory_order_acquire);
+    uint32_t avail = head - tail;
+    uint32_t n = frames < avail ? frames : avail;
+    atomic_store_explicit(&r->tail, tail + n, memory_order_release);
+    return n;
+}
+
 static void resetWindow(CLUE_AUDIO_DRIFT* d) {
     d->windowCount = 0;
     d->windowMin = INT32_MAX;
@@ -80,6 +89,8 @@ static int32_t max32(int32_t a, int32_t b) {
 void ClueDriftInit(CLUE_AUDIO_DRIFT* d, int32_t burstFrames, int32_t packetFrames, int32_t sampleRate) {
     int32_t ms = sampleRate / 1000;
     memset(d, 0, sizeof(*d));
+    d->burst = burstFrames;
+    d->startExcess = max32(burstFrames, 20 * ms);
     d->minTarget = max32(burstFrames, 2 * ms);
     d->maxTarget = 40 * ms;
     d->raiseStep = max32(burstFrames / 2, ms);
@@ -122,6 +133,22 @@ int32_t ClueDriftOnUnderrun(CLUE_AUDIO_DRIFT* d) {
 
 int32_t ClueDriftSetpoint(const CLUE_AUDIO_DRIFT* d) {
     return d->target + d->spreadQ4 / 16;
+}
+
+int32_t ClueDriftStartupTrim(CLUE_AUDIO_DRIFT* d, int32_t fillFrames, int32_t packetFrames) {
+    if (d->sinceStart >= d->gracePackets) {
+        return 0;
+    }
+    int32_t level = max32(ClueDriftSetpoint(d), d->target + packetFrames);
+    // Start-up jitter alone can reach ~10 ms above the level; a queued backlog is far more
+    if (fillFrames <= level + d->startExcess) {
+        return 0;
+    }
+    // The backlog would skew the filters; measure again from the trimmed level
+    d->haveFilter = 0;
+    d->pending = 0;
+    resetWindow(d);
+    return fillFrames - (level + d->burst);
 }
 
 int32_t ClueDriftOnPacket(CLUE_AUDIO_DRIFT* d, int32_t fillFrames, int32_t packetFrames) {

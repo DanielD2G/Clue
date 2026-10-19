@@ -170,6 +170,12 @@ public final class TraceWriter {
             long hwN = counters.audioHwLatencySamples.get();
             w.write("audioHwLatencyUs=" + (hwN > 0 ? counters.audioHwLatencySumUs.get() / hwN : -1) + "\n");
             w.write("audioOutputLatencyUs=" + counters.audioOutputLatencyUs() + "\n");
+            w.write("audioStartupTrimmedFrames=" + counters.audioStartupTrimmedFrames.get() + "\n");
+            w.write("audioRingSteadyUs=" + counters.audioRingSteadyUs.get() + "\n");
+            w.write("audioUnderrunsSteady=" + counters.audioUnderrunsSteady.get() + "\n");
+            w.write("audioDriftFramesDroppedSteady=" + counters.audioDriftFramesDroppedSteady.get() + "\n");
+            w.write("audioDriftFramesInsertedSteady=" + counters.audioDriftFramesInsertedSteady.get() + "\n");
+            w.write("audioOutputLatencySteadyUs=" + counters.audioOutputLatencySteadyUs() + "\n");
         }
     }
 }
