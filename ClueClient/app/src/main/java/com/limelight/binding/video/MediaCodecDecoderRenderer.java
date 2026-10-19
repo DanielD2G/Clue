@@ -1601,36 +1601,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
     }
 
-    @SuppressWarnings("deprecation")
-    @Override
-    public int submitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
-                                int frameNumber, int frameType, char frameHostProcessingLatency,
-                                long receiveTimeUs, long enqueueTimeUs,
-                                long hostPresentationTimeUs) { // CLUE: host capture time
-        if (stopping) {
-            // Don't bother if we're stopping
-            return MoonBridge.DR_OK;
-        }
-
-        if (lastFrameNumber == 0) {
-            activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
-        } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
-            // We can receive the same "frame" multiple times if it's an IDR frame.
-            // In that case, each frame start NALU is submitted independently.
-            activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
-            activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
-            activeWindowVideoStats.frameLossEvents++;
-        }
-
-        // Reset CSD data for each IDR frame
-        if (lastFrameNumber != frameNumber && frameType == MoonBridge.FRAME_TYPE_IDR) {
-            vpsBuffers.clear();
-            spsBuffers.clear();
-            ppsBuffers.clear();
-        }
-
-        lastFrameNumber = frameNumber;
-
+    // CLUE: moved out of submitDecodeUnit() (unchanged) and run after the frame is queued. Once a
+    // second it builds the overlay text (string formatting, trace percentiles, a synchronized JNI
+    // drain), which used to delay that frame's queueInputBuffer() by its whole cost.
+    private void clueFlipStatsWindowIfDue() {
         // Flip stats windows roughly every second
         if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
             if (prefs.enablePerfOverlay) {
@@ -1710,6 +1684,39 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             activeWindowVideoStats.clear();
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
         }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public int submitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
+                                int frameNumber, int frameType, char frameHostProcessingLatency,
+                                long receiveTimeUs, long enqueueTimeUs,
+                                long hostPresentationTimeUs) { // CLUE: host capture time
+        if (stopping) {
+            // Don't bother if we're stopping
+            return MoonBridge.DR_OK;
+        }
+
+        if (lastFrameNumber == 0) {
+            activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
+        } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
+            // We can receive the same "frame" multiple times if it's an IDR frame.
+            // In that case, each frame start NALU is submitted independently.
+            activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
+            activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
+            activeWindowVideoStats.frameLossEvents++;
+        }
+
+        // Reset CSD data for each IDR frame
+        if (lastFrameNumber != frameNumber && frameType == MoonBridge.FRAME_TYPE_IDR) {
+            vpsBuffers.clear();
+            spsBuffers.clear();
+            ppsBuffers.clear();
+        }
+
+        lastFrameNumber = frameNumber;
+
+        // CLUE: the stats window flip runs in clueFlipStatsWindowIfDue() once this frame is queued
 
         boolean csdSubmittedForThisFrame = false;
 
@@ -2008,6 +2015,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (!queueNextInputBuffer(timestampUs, codecFlags)) {
             return MoonBridge.DR_NEED_IDR;
         }
+
+        clueFlipStatsWindowIfDue(); // CLUE
 
         return MoonBridge.DR_OK;
     }
