@@ -385,6 +385,16 @@ public class PreferenceConfiguration {
         }
     }
 
+    // CLUE: only the pacing values the settings screen itself offers are accepted
+    public static void applyCluePacingExtra(Context context, String pacing) {
+        if (pacing == null || !java.util.Arrays.asList("clue", "latency", "balanced", "cap-fps", "smoothness").contains(pacing)) {
+            return;
+        }
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(FRAME_PACING_PREF_STRING, pacing)
+                .apply();
+    }
+
     public static int getDefaultBitrate(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         return getDefaultBitrate(

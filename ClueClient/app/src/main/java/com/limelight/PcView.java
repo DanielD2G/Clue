@@ -132,6 +132,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
 
         // CLUE: write reference-hardware defaults (native resolution, 80 Mbps) first
         PreferenceConfiguration.applyClueFirstRunDefaults(this);
+        // CLUE: measurement scripts pick the pacing mode at launch (am start --es clue_pacing <mode>)
+        PreferenceConfiguration.applyCluePacingExtra(this, getIntent().getStringExtra("clue_pacing"));
 
         // Set default preferences if we've never been run
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
