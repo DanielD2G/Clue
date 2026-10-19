@@ -454,6 +454,7 @@ public class NvConnection {
     {
         if (!isMonkey) {
             MoonBridge.sendMouseMove(deltaX, deltaY);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
 
@@ -461,6 +462,7 @@ public class NvConnection {
     {
         if (!isMonkey) {
             MoonBridge.sendMousePosition(x, y, referenceWidth, referenceHeight);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
 
@@ -468,6 +470,7 @@ public class NvConnection {
     {
         if (!isMonkey) {
             MoonBridge.sendMouseMoveAsMousePosition(deltaX, deltaY, referenceWidth, referenceHeight);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
 
@@ -475,6 +478,7 @@ public class NvConnection {
     {
         if (!isMonkey) {
             MoonBridge.sendMouseButton(MouseButtonPacket.PRESS_EVENT, mouseButton);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
     
@@ -482,6 +486,7 @@ public class NvConnection {
     {
         if (!isMonkey) {
             MoonBridge.sendMouseButton(MouseButtonPacket.RELEASE_EVENT, mouseButton);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
     
@@ -500,6 +505,7 @@ public class NvConnection {
     public void sendKeyboardInput(final short keyMap, final byte keyDirection, final byte modifier, final byte flags) {
         if (!isMonkey) {
             MoonBridge.sendKeyboardInput(keyMap, keyDirection, modifier, flags);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
     
@@ -518,20 +524,24 @@ public class NvConnection {
     public void sendMouseHighResScroll(final short scrollAmount) {
         if (!isMonkey) {
             MoonBridge.sendMouseHighResScroll(scrollAmount);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
 
     public void sendMouseHighResHScroll(final short scrollAmount) {
         if (!isMonkey) {
             MoonBridge.sendMouseHighResHScroll(scrollAmount);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
         }
     }
 
     public int sendTouchEvent(byte eventType, int pointerId, float x, float y, float pressureOrDistance,
                               float contactAreaMajor, float contactAreaMinor, short rotation) {
         if (!isMonkey) {
-            return MoonBridge.sendTouchEvent(eventType, pointerId, x, y, pressureOrDistance,
+            int clueRet = MoonBridge.sendTouchEvent(eventType, pointerId, x, y, pressureOrDistance,
                     contactAreaMajor, contactAreaMinor, rotation);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
+            return clueRet;
         }
         else {
             return MoonBridge.LI_ERR_UNSUPPORTED;
@@ -542,8 +552,10 @@ public class NvConnection {
                             float pressureOrDistance, float contactAreaMajor, float contactAreaMinor,
                             short rotation, byte tilt) {
         if (!isMonkey) {
-            return MoonBridge.sendPenEvent(eventType, toolType, penButtons, x, y, pressureOrDistance,
+            int clueRet = MoonBridge.sendPenEvent(eventType, toolType, penButtons, x, y, pressureOrDistance,
                     contactAreaMajor, contactAreaMinor, rotation, tilt);
+            com.clue.trace.TraceSession.inputSent(); // CLUE
+            return clueRet;
         }
         else {
             return MoonBridge.LI_ERR_UNSUPPORTED;

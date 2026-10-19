@@ -1320,8 +1320,31 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         return (byte) modifierFlags;
     }
 
+    // CLUE: keyboard/mouse/touch tracing; gamepad events are traced by ControllerHandler.
+    private static boolean clueIsGamepadSource(int source) {
+        return (source & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                (source & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK;
+    }
+
+    private static void clueTraceKeyEvent(KeyEvent event) {
+        if (!clueIsGamepadSource(event.getSource())) {
+            com.clue.trace.TraceSession.inputEvent(com.clue.trace.InputTrace.KEYBOARD, event);
+        }
+    }
+
+    private static void clueTraceMotionEvent(MotionEvent event) {
+        int source = event.getSource();
+        if (clueIsGamepadSource(source)) {
+            return;
+        }
+        byte type = (source & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN
+                ? com.clue.trace.InputTrace.TOUCH : com.clue.trace.InputTrace.MOUSE;
+        com.clue.trace.TraceSession.inputEvent(type, event);
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        clueTraceKeyEvent(event); // CLUE
         return handleKeyDown(event) || super.onKeyDown(keyCode, event);
     }
 
@@ -1404,6 +1427,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
+        clueTraceKeyEvent(event); // CLUE
         return handleKeyUp(event) || super.onKeyUp(keyCode, event);
     }
 
@@ -1784,6 +1808,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     // Returns true if the event was consumed
     // NB: View is only present if called from a view callback
     private boolean handleMotionEvent(View view, MotionEvent event) {
+        clueTraceMotionEvent(event); // CLUE
         // Pass through mouse/touch/joystick input if we're not grabbing
         if (!grabbedInput) {
             return false;

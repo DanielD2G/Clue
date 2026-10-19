@@ -1205,6 +1205,26 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         }
     }
 
+    // CLUE: input tracing. The entry points run on the UI thread and send synchronously,
+    // so one pending slot is enough; sends from other paths see -1 and are not traced.
+    private int clueTraceSlot = -1;
+
+    private static int clueTraceEvent(android.view.InputEvent event) {
+        com.clue.trace.InputTrace it = com.clue.trace.TraceSession.activeInput();
+        if (it == null) {
+            return -1;
+        }
+        return it.onEvent(com.clue.trace.InputTrace.GAMEPAD, com.clue.trace.TraceSession.eventTimeNs(event));
+    }
+
+    private void clueTraceSent() {
+        com.clue.trace.InputTrace it = com.clue.trace.TraceSession.activeInput();
+        if (it != null) {
+            it.onSent(clueTraceSlot, System.nanoTime());
+        }
+        clueTraceSlot = -1;
+    }
+
     private void sendControllerInputPacket(GenericControllerContext originalContext) {
         assignControllerNumberIfNeeded(originalContext);
 
@@ -1314,6 +1334,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                     leftStickX, leftStickY,
                     rightStickX, rightStickY);
         }
+
+        // CLUE: the controller state for the current input event has been handed to common-c
+        clueTraceSent();
     }
 
     private final int REMAP_IGNORE = -1;
@@ -1811,6 +1834,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleMotionEvent(MotionEvent event) {
+        clueTraceSlot = clueTraceEvent(event); // CLUE
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;
@@ -2323,6 +2347,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleButtonUp(KeyEvent event) {
+        clueTraceSlot = clueTraceEvent(event); // CLUE
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;
@@ -2560,6 +2585,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
     }
 
     public boolean handleButtonDown(KeyEvent event) {
+        clueTraceSlot = clueTraceEvent(event); // CLUE
         InputDeviceContext context = getContextForEvent(event);
         if (context == null) {
             return true;

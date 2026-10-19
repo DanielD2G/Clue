@@ -12,7 +12,17 @@ public final class TraceSession {
 
     private static volatile TraceSession current;
 
+    static final int INPUT_CAPACITY = 1 << 16;
+
     private final FrameTrace frames = new FrameTrace(FRAME_CAPACITY);
+    private final InputTrace input = new InputTrace(INPUT_CAPACITY);
+
+    /**
+     * Slot of the keyboard/mouse/touch event currently being dispatched on the UI thread,
+     * or -1. Game marks it on entry; NvConnection marks it sent after handing it to
+     * moonlight-common-c. Gamepad events are traced by ControllerHandler instead.
+     */
+    private static int pendingInputSlot = -1;
 
     private TraceSession() {}
 
@@ -32,8 +42,52 @@ public final class TraceSession {
         return s != null ? s.frames : null;
     }
 
+    /** Input trace of the active session, or null. */
+    public static InputTrace activeInput() {
+        TraceSession s = current;
+        return s != null ? s.input : null;
+    }
+
+    /** UI thread: a keyboard, mouse or touch event starts being handled. */
+    public static void inputEvent(byte type, android.view.InputEvent event) {
+        InputTrace it = activeInput();
+        if (it == null) {
+            pendingInputSlot = -1;
+            return;
+        }
+        pendingInputSlot = it.onEvent(type, eventTimeNs(event));
+    }
+
+    /** Event time in CLOCK_MONOTONIC ns, at full precision on API 34+. */
+    public static long eventTimeNs(android.view.InputEvent event) {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            if (event instanceof android.view.MotionEvent) {
+                return ((android.view.MotionEvent) event).getEventTimeNanos();
+            }
+            // KeyEvent has no public nanosecond accessor; keys fall back to ms precision.
+        }
+        return event.getEventTime() * 1_000_000L;
+    }
+
+    /** The pending event was handed to moonlight-common-c. Later sends for the same event are ignored. */
+    public static void inputSent() {
+        int slot = pendingInputSlot;
+        if (slot < 0) {
+            return;
+        }
+        pendingInputSlot = -1;
+        InputTrace it = activeInput();
+        if (it != null) {
+            it.onSent(slot, System.nanoTime());
+        }
+    }
+
     public FrameTrace frames() {
         return frames;
+    }
+
+    public InputTrace input() {
+        return input;
     }
 
     public void stop() {
@@ -69,6 +123,19 @@ public final class TraceSession {
                 d[2]++;
             }
         });
+        final long[] in = new long[4]; // events, sent, sum event->sent ns, max ns
+        input.forEach((type, eventNs, sentNs) -> {
+            in[0]++;
+            if (sentNs > 0 && sentNs >= eventNs) {
+                in[1]++;
+                long dt = sentNs - eventNs;
+                in[2] += dt;
+                in[3] = Math.max(in[3], dt);
+            }
+        });
+        android.util.Log.i("ClueTrace", "session input events=" + in[0] + " sent=" + in[1]
+                + " avgEventToSentMs=" + (in[1] > 0 ? (in[2] / in[1]) / 1e6 : -1)
+                + " maxEventToSentMs=" + in[3] / 1e6);
         android.util.Log.i("ClueTrace", "session frames=" + frames.size()
                 + " presented=" + c[0]
                 + " ptsMisses=" + frames.ptsMisses()
