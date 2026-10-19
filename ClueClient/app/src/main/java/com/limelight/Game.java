@@ -2596,6 +2596,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             clueMeta.put("bitrateKbps", String.valueOf(prefConfig.bitrate));
             clueMeta.put("framePacing", String.valueOf(prefConfig.framePacing));
             clueMeta.put("appVersion", com.limelight.BuildConfig.VERSION_NAME);
+            int clueDropEvery = android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
+                    .getInt("clue_drop_every", 0);
+            com.limelight.nvstream.jni.MoonBridge.clueSetInputDropEvery(clueDropEvery);
+            if (clueDropEvery > 0) {
+                clueMeta.put("inputDropEvery", String.valueOf(clueDropEvery));
+            }
             if (android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
                     .getBoolean("clue_trace_enabled", true)) {
                 clueTraceSession = com.clue.trace.TraceSession.start(Game.this, clueMeta);

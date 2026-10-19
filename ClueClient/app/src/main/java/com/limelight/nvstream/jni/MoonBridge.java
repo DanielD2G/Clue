@@ -357,6 +357,9 @@ public class MoonBridge {
     // CLUE: drains input packets stamped on the wire as (type, enqueueNs, wireNs) triples
     public static native int clueDrainInputWire(long[] out);
 
+    // CLUE: test-only loss injection, drops one in every N unreliable controller datagrams (0 = off)
+    public static native void clueSetInputDropEvery(int everyN);
+
     // CLUE: native AAudio output (clue_aaudio.c). Open returns 0 or a negative error, in which
     // case the AudioTrack path is used. Stats layout: com.clue.audio.ClueAudio.STAT_*.
     public static native int clueAudioOpen(int channelCount, int sampleRate, int samplesPerFrame);

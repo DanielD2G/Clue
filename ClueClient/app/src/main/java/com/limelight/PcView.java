@@ -137,6 +137,11 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         // CLUE: and the audio output path (--ez clue_aaudio true|false)
         PreferenceConfiguration.applyClueAAudioExtra(this, getIntent());
         // CLUE: and request a one-shot button-to-frame test for the next stream (--ei clue_photon_test <presses>)
+        // CLUE: test-only controller loss injection (--ei clue_drop_every <N>, 0 turns it off)
+        if (getIntent().hasExtra("clue_drop_every")) {
+            android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putInt("clue_drop_every", getIntent().getIntExtra("clue_drop_every", 0)).apply();
+        }
         if (getIntent().hasExtra("clue_photon_test")) {
             android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putInt("clue_photon_test", getIntent().getIntExtra("clue_photon_test", 0)).apply();

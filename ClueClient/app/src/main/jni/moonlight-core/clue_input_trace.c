@@ -99,3 +99,9 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueDrainInputWire(JNIEnv *env, jclas
     atomic_store(&wireDrained, head);
     return n;
 }
+
+// Test-only loss injection: one in every N unreliable controller datagrams is dropped (0 = off).
+JNIEXPORT void JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_clueSetInputDropEvery(JNIEnv *env, jclass clazz, jint everyN) {
+    LiClueSetInputDropEvery(everyN);
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Clue audio test page (host side): a steady 440 Hz tone with a short 880 Hz blip every second,
+     so dropouts and drift on the client are audible and the stream always carries audio.
+     Open with Chrome's --autoplay-policy=no-user-gesture-required. -->
+<html>
+<head><meta charset="utf-8"><title>Clue audio tone</title>
+<style>html,body{margin:0;height:100%;background:#111;color:#666;font:20px monospace}</style></head>
+<body><p id="s">starting…</p>
+<script>
+  const ctx = new AudioContext();
+  const tone = ctx.createOscillator(); tone.frequency.value = 440;
+  const gain = ctx.createGain(); gain.gain.value = 0.2;
+  tone.connect(gain).connect(ctx.destination); tone.start();
+  setInterval(() => {
+    const b = ctx.createOscillator(); b.frequency.value = 880;
+    const g = ctx.createGain(); g.gain.value = 0.2;
+    b.connect(g).connect(ctx.destination); b.start(); b.stop(ctx.currentTime + 0.05);
+    document.getElementById('s').textContent = 'audio ' + ctx.state + ' ' + ctx.currentTime.toFixed(1) + ' s';
+  }, 1000);
+</script></body></html>
