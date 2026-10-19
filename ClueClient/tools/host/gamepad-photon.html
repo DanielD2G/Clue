@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Clue button-to-frame test page (host side). Open full screen on the streamed display.
+     The 256x256 square at the top left turns white while button A (index 0) is held on any
+     gamepad; Clue's PhotonTest reads it back from the stream. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clue photon test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #square { position: absolute; left: 0; top: 0; width: 256px; height: 256px; background: #000; }
+  #info { position: absolute; left: 280px; top: 16px; color: #666; font: 16px monospace; }
+</style>
+</head>
+<body>
+<div id="square"></div>
+<div id="info">waiting for a gamepad…</div>
+<script>
+  const square = document.getElementById('square');
+  const info = document.getElementById('info');
+  let presses = 0, wasDown = false;
+  function frame() {
+    let down = false, pads = 0;
+    for (const gp of navigator.getGamepads()) {
+      if (!gp) continue;
+      pads++;
+      if (gp.buttons[0] && gp.buttons[0].pressed) down = true;
+    }
+    if (down && !wasDown) presses++;
+    wasDown = down;
+    square.style.background = down ? '#fff' : '#000';
+    info.textContent = pads ? `gamepads ${pads} · presses ${presses}` : 'waiting for a gamepad…';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

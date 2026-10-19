@@ -125,6 +125,34 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean surfaceCreated = false;
     private boolean attemptedConnection = false;
     private com.clue.trace.TraceSession clueTraceSession; // CLUE
+    private com.clue.input.PhotonTest cluePhotonTest; // CLUE
+
+    // CLUE: one-shot button-to-frame test requested at launch (tools/photon.sh)
+    private void clueMaybeStartPhotonTest() {
+        android.content.SharedPreferences prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        int presses = prefs.getInt("clue_photon_test", 0);
+        if (presses <= 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return;
+        }
+        prefs.edit().remove("clue_photon_test").apply();
+        final java.io.File dir = getExternalFilesDir("photon");
+        cluePhotonTest = new com.clue.input.PhotonTest(conn, streamView, prefConfig.width, prefConfig.height, presses,
+                (press, detect, count, s) -> {
+                    android.util.Log.i("ClueTrace", String.format(java.util.Locale.US,
+                            "photon n=%d misses=%d p50=%.1f p95=%.1f p99=%.1f ms", s.n, s.misses, s.p50Ms, s.p95Ms, s.p99Ms));
+                    if (dir != null) {
+                        StringBuilder sb = new StringBuilder("pressNs,detectNs\n");
+                        for (int i = 0; i < count; i++) {
+                            sb.append(press[i]).append(',').append(detect[i]).append('\n');
+                        }
+                        try (java.io.FileWriter w = new java.io.FileWriter(new java.io.File(dir, "photon.csv"))) {
+                            w.write(sb.toString());
+                        } catch (java.io.IOException ignored) {
+                        }
+                    }
+                });
+        cluePhotonTest.start(3000);
+    }
     private int suppressPipRefCount = 0;
     private String pcName;
     private String appName;
@@ -2265,6 +2293,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             controllerHandler.stop();
 
             // CLUE: end the trace session (the writer is hooked here in a later step)
+            if (cluePhotonTest != null) {
+                cluePhotonTest.stop();
+                cluePhotonTest = null;
+            }
             if (clueTraceSession != null) {
                 clueTraceSession.stop();
                 clueTraceSession = null;
@@ -2473,6 +2505,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 UiHelper.notifyStreamConnected(Game.this);
 
                 hideSystemUi(1000);
+
+                clueMaybeStartPhotonTest(); // CLUE
             }
         });
 
