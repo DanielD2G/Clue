@@ -25,8 +25,14 @@ public final class SessionCounters {
     /** Mean of the AAudio write-to-DAC latency samples (us) and how many there were. */
     public final AtomicLong audioHwLatencySumUs = new AtomicLong();
     public final AtomicLong audioHwLatencySamples = new AtomicLong();
-    /** Mean ring level over the session (us); decoded audio waits this long before AAudio. */
+    /**
+     * Mean ring occupancy while playing (us), sampled by the AAudio callback over the whole
+     * session: decoded audio waits this long before reaching AAudio.
+     */
     public final AtomicLong audioRingUs = new AtomicLong(-1);
+    /** Latest drift-control safety margin at the ring's lowest point, and mean-level setpoint (us). */
+    public final AtomicLong audioRingTargetUs = new AtomicLong(-1);
+    public final AtomicLong audioRingSetpointUs = new AtomicLong(-1);
     /** AAudio buffer size in frames (starts at 2 bursts, grows on XRuns). */
     public final AtomicLong audioBufferFrames = new AtomicLong();
     /** "aaudio-exclusive", "aaudio-shared" or "audiotrack". */

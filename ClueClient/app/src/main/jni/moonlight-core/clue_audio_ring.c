@@ -69,57 +69,102 @@ void ClueRingFlush(CLUE_AUDIO_RING* r) {
 static void resetWindow(CLUE_AUDIO_DRIFT* d) {
     d->windowCount = 0;
     d->windowMin = INT32_MAX;
+    d->windowSum = 0;
     d->windowAdj = 0;
+}
+
+static int32_t max32(int32_t a, int32_t b) {
+    return a > b ? a : b;
 }
 
 void ClueDriftInit(CLUE_AUDIO_DRIFT* d, int32_t burstFrames, int32_t packetFrames, int32_t sampleRate) {
     int32_t ms = sampleRate / 1000;
     memset(d, 0, sizeof(*d));
-    // Start with one burst of slack (at least 2 ms) between packet arrival and the next read.
-    d->minTarget = burstFrames > 2 * ms ? burstFrames : 2 * ms;
+    d->minTarget = max32(burstFrames, 2 * ms);
     d->maxTarget = 40 * ms;
-    d->raiseStep = burstFrames > ms ? burstFrames : ms;
-    d->hyst = ms;
+    d->raiseStep = max32(burstFrames / 2, ms);
+    d->deadBand = max32(burstFrames / 2, 2 * ms);
     d->windowPackets = packetFrames > 0 && sampleRate / packetFrames > 0 ? sampleRate / packetFrames : 1;
-    d->decayPackets = 60 * d->windowPackets;
+    d->gracePackets = 2 * d->windowPackets;
+    d->minDecayPackets = 10 * d->windowPackets;
+    d->maxDecayPackets = 120 * d->windowPackets;
+    d->decayPackets = d->minDecayPackets;
     d->target = d->minTarget;
+    d->sinceDecay = INT32_MAX;
+    ClueDriftRestart(d);
+}
+
+void ClueDriftRestart(CLUE_AUDIO_DRIFT* d) {
+    d->sinceStart = 0;
+    d->haveFilter = 0;
     d->pending = 0;
-    d->cleanPackets = 0;
     resetWindow(d);
 }
 
-void ClueDriftOnUnderrun(CLUE_AUDIO_DRIFT* d) {
+int32_t ClueDriftOnUnderrun(CLUE_AUDIO_DRIFT* d) {
+    d->pending = 0;
+    resetWindow(d);
+    // Right after (re)start the ring is still filling and packets arrive in a burst: not jitter
+    if (d->sinceStart < d->gracePackets) {
+        return 0;
+    }
+    // Underran soon after giving latency back: wait twice as long before the next decay
+    if (d->sinceDecay < d->decayPackets) {
+        d->decayPackets = d->decayPackets * 2 > d->maxDecayPackets ? d->maxDecayPackets : d->decayPackets * 2;
+    }
+    d->cleanPackets = 0;
     d->target += d->raiseStep;
     if (d->target > d->maxTarget) {
         d->target = d->maxTarget;
     }
-    d->pending = 0;
-    d->cleanPackets = 0;
-    resetWindow(d);
+    return 1;
+}
+
+int32_t ClueDriftSetpoint(const CLUE_AUDIO_DRIFT* d) {
+    return d->target + d->spreadQ4 / 16;
 }
 
 int32_t ClueDriftOnPacket(CLUE_AUDIO_DRIFT* d, int32_t fillFrames, int32_t packetFrames) {
-    // Undo this window's own corrections, so the minimum measures the incoming level
+    if (d->sinceStart < INT32_MAX) {
+        d->sinceStart++;
+    }
+    if (d->sinceDecay < INT32_MAX) {
+        d->sinceDecay++;
+    }
+
+    // Undo this window's own corrections, so the stats measure the incoming level
     int32_t level = fillFrames + d->windowAdj;
     if (level < d->windowMin) {
         d->windowMin = level;
     }
+    d->windowSum += level;
     d->windowCount++;
 
-    // After a long stretch without underruns, give back some of the latency added for jitter.
+    // After a stretch without underruns, give back some of the margin added for jitter
     if (++d->cleanPackets >= d->decayPackets) {
         d->cleanPackets = 0;
-        d->target -= d->raiseStep / 2;
-        if (d->target < d->minTarget) {
-            d->target = d->minTarget;
+        if (d->target > d->minTarget) {
+            d->target = max32(d->target - d->raiseStep, d->minTarget);
+            d->sinceDecay = 0;
         }
     }
 
-    // At the end of each window, plan to remove (or add) what is left of the error of its lowest
-    // level over the next window. The plan is replaced, not accumulated, so it cannot overshoot.
     if (d->windowCount >= d->windowPackets) {
-        int32_t err = d->windowMin - d->windowAdj - d->target;
-        d->pending = (err > d->hyst || err < -d->hyst) ? err : 0;
+        // Window stats in the current reference (after this window's corrections)
+        int32_t meanEnd = (int32_t)(d->windowSum / d->windowCount) - d->windowAdj;
+        int32_t spread = (int32_t)(d->windowSum / d->windowCount) - d->windowMin;
+        if (!d->haveFilter) {
+            d->haveFilter = 1;
+            d->meanF = meanEnd;
+            d->spreadQ4 = spread * 16;
+        } else {
+            d->meanF += (meanEnd - d->meanF) / 2;
+            d->spreadQ4 += (spread * 16 - d->spreadQ4) / 16;
+        }
+        // Plan to correct half of the error over the next window, in one direction only.
+        // The plan is replaced, not accumulated, so it cannot overshoot.
+        int32_t err = d->meanF - ClueDriftSetpoint(d);
+        d->pending = (err > d->deadBand || err < -d->deadBand) ? err / 2 : 0;
         resetWindow(d);
     }
 
@@ -146,6 +191,7 @@ int32_t ClueDriftOnPacket(CLUE_AUDIO_DRIFT* d, int32_t fillFrames, int32_t packe
     }
     d->pending -= step;
     d->windowAdj += step;
+    d->meanF -= step;
     return step;
 }
 

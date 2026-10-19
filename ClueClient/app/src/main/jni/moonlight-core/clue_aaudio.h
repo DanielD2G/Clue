@@ -20,7 +20,7 @@ enum {
     CLUE_AUDIO_STAT_DRIFT_DROPPED,       // single frames merged away by drift control
     CLUE_AUDIO_STAT_DRIFT_INSERTED,      // single frames added by drift control
     CLUE_AUDIO_STAT_HW_LATENCY_US,       // AAudio write-to-DAC latency right now, -1 if unknown
-    CLUE_AUDIO_STAT_RING_MEAN_US,        // mean ring level over the session
+    CLUE_AUDIO_STAT_RING_MEAN_US,        // mean ring occupancy while playing, over the session
     CLUE_AUDIO_STAT_BUFFER_FRAMES,       // AAudio buffer size
     CLUE_AUDIO_STAT_BURST_FRAMES,
     CLUE_AUDIO_STAT_EXCLUSIVE,           // 1 EXCLUSIVE (MMAP), 0 SHARED
@@ -28,5 +28,6 @@ enum {
     CLUE_AUDIO_STAT_TARGET_FRAMES,       // drift control target ring level
     CLUE_AUDIO_STAT_REOPENS,             // streams reopened after a device change
     CLUE_AUDIO_STAT_FRAMES_LOST,         // frames that did not fit in the ring
+    CLUE_AUDIO_STAT_SETPOINT_FRAMES,     // drift control setpoint of the mean ring level (target + jitter)
     CLUE_AUDIO_STAT_COUNT
 };
