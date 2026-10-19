@@ -22,10 +22,13 @@ dump() { "$ADB" shell uiautomator dump /sdcard/clue-ui.xml >/dev/null 2>&1; "$AD
 bounds_of() { { grep -oE "text=\"$1\"[^>]*bounds=\"[^\"]*\"" "$tmp/ui.xml" || true; } | head -1 | { grep -oE '[0-9]+' || true; } | tr '\n' ' '; }
 
 "$ADB" shell input keyevent KEYCODE_WAKEUP
-if [ -n "${CLUE_PACING:-}" ]; then
+if [ -n "${CLUE_PACING:-}" ] || [ -n "${CLUE_AAUDIO:-}" ]; then
   # Fresh start so PcView applies the requested pacing mode (clue, balanced, latency, ...)
+  # and audio output (CLUE_AAUDIO=true for AAudio, false for the upstream AudioTrack path)
   "$ADB" shell am force-stop "$pkg"
-  "$ADB" shell am start -n "$pkg/com.limelight.PcView" --es clue_pacing "$CLUE_PACING" >/dev/null 2>&1
+  "$ADB" shell am start -n "$pkg/com.limelight.PcView" \
+    ${CLUE_PACING:+--es clue_pacing "$CLUE_PACING"} \
+    ${CLUE_AAUDIO:+--ez clue_aaudio "$CLUE_AAUDIO"} >/dev/null 2>&1
 else
   "$ADB" shell monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 fi

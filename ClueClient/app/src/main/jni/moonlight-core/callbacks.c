@@ -13,6 +13,7 @@
 #include <time.h>
 
 #include "clue_input_trace.h"
+#include "clue_aaudio.h"
 
 // CLUE: moonlight-common-c stamps decode units with LiGetMicroseconds(), which is
 // CLOCK_MONOTONIC_RAW measured from the library's own start time, while Java
@@ -271,6 +272,17 @@ void BridgeArCleanup() {
 }
 
 void BridgeArDecodeAndPlaySample(char* sampleData, int sampleLength) {
+    // CLUE: AAudio path, decode straight into the native ring without touching the JVM
+    if (clueAudioIsActive()) {
+        int16_t* pcm = clueAudioDecodeBuffer();
+        int frames = opus_multistream_decode(Decoder, (const unsigned char*)sampleData, sampleLength,
+                                             pcm, OpusConfig.samplesPerFrame, 0);
+        if (frames > 0) {
+            clueAudioWrite(pcm, frames);
+        }
+        return;
+    }
+
     JNIEnv* env = GetThreadEnv();
 
     jshort* decodedData = (*env)->GetPrimitiveArrayCritical(env, DecodedAudioBuffer, NULL);

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Builds Clue's native unit tests for arm64 with the NDK's clang and runs them on the connected device.
+# --build-only compiles them without a device.
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -30,7 +31,19 @@ w() { cygpath -w "$1"; }
   -llog \
   -o "$(w "$out/clue_lbq_tests")" </dev/null
 
-for t in clue_native_tests clue_lbq_tests; do
+# Audio ring and drift control
+"$cc" --target=aarch64-linux-android29 -O2 -Wall -Wextra -Werror -Wno-unused-parameter \
+  -I "$(w "$core")" \
+  "$(w "$core/test/clue_audio_test.c")" \
+  "$(w "$core/clue_audio_ring.c")" \
+  -o "$(w "$out/clue_audio_tests")" </dev/null
+
+if [ "${1:-}" = "--build-only" ]; then
+  echo "native tests built"
+  exit 0
+fi
+
+for t in clue_native_tests clue_lbq_tests clue_audio_tests; do
   "$ADB" push "$(w "$out/$t")" "/data/local/tmp/$t" >/dev/null
   "$ADB" shell chmod 755 "/data/local/tmp/$t"
   "$ADB" shell "/data/local/tmp/$t"

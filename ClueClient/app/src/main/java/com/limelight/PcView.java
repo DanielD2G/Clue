@@ -134,6 +134,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         PreferenceConfiguration.applyClueFirstRunDefaults(this);
         // CLUE: measurement scripts pick the pacing mode at launch (am start --es clue_pacing <mode>)
         PreferenceConfiguration.applyCluePacingExtra(this, getIntent().getStringExtra("clue_pacing"));
+        // CLUE: and the audio output path (--ez clue_aaudio true|false)
+        PreferenceConfiguration.applyClueAAudioExtra(this, getIntent());
         // CLUE: and request a one-shot button-to-frame test for the next stream (--ei clue_photon_test <presses>)
         if (getIntent().hasExtra("clue_photon_test")) {
             android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()

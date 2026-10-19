@@ -20,6 +20,9 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     private AudioTrack track;
 
+    // CLUE: native AAudio output (H4); null while the AudioTrack path is in use
+    private com.clue.audio.ClueAudio.Poller clueAAudio;
+
     public AndroidAudioRenderer(Context context, boolean enableAudioFx) {
         this.context = context;
         this.enableAudioFx = enableAudioFx;
@@ -92,6 +95,26 @@ public class AndroidAudioRenderer implements AudioRenderer {
         }
 
         LimeLog.info("Audio channel config: "+String.format("0x%X", channelConfig));
+
+        // CLUE: AAudio first: Opus decodes into a native ring that the AAudio callback drains,
+        // without blocking writes or the 40 ms pending-audio drop below. AudioTrack stays as
+        // the fallback when it is disabled (pref/extra clue_aaudio) or the stream cannot open.
+        if (com.clue.audio.ClueAudio.shouldTry(Build.VERSION.SDK_INT,
+                android.preference.PreferenceManager.getDefaultSharedPreferences(context).getBoolean(
+                        com.clue.audio.ClueAudio.PREF, com.clue.audio.ClueAudio.defaultEnabled(Build.VERSION.SDK_INT)),
+                enableAudioFx, audioConfiguration.channelCount)) {
+            int err = MoonBridge.clueAudioOpen(audioConfiguration.channelCount, sampleRate, samplesPerFrame);
+            if (err == 0) {
+                clueAAudio = new com.clue.audio.ClueAudio.Poller();
+                LimeLog.info("Audio output: AAudio");
+                return 0;
+            }
+            LimeLog.warning("AAudio stream failed to open ("+err+"), falling back to AudioTrack");
+        }
+        com.clue.trace.SessionCounters clueCounters = com.clue.trace.TraceSession.activeCounters();
+        if (clueCounters != null) {
+            clueCounters.audioPath = "audiotrack";
+        }
 
         bytesPerFrame = audioConfiguration.channelCount * samplesPerFrame * 2;
 
@@ -216,6 +239,11 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void start() {
+        if (clueAAudio != null) { // CLUE
+            MoonBridge.clueAudioStart();
+            clueAAudio.start();
+            return;
+        }
         if (enableAudioFx) {
             // Open an audio effect control session to allow equalizers to apply audio effects
             Intent i = new Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION);
@@ -228,6 +256,11 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void stop() {
+        if (clueAAudio != null) { // CLUE: last latency sample while the stream still runs
+            clueAAudio.shutdown();
+            clueAAudio.pollOnce();
+            return;
+        }
         if (enableAudioFx) {
             // Close our audio effect control session when we're stopping
             Intent i = new Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION);
@@ -239,6 +272,12 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void cleanup() {
+        if (clueAAudio != null) { // CLUE: final counters, then free the stream and the ring
+            MoonBridge.clueAudioClose();
+            clueAAudio.pollOnce();
+            clueAAudio = null;
+            return;
+        }
         // Immediately drop all pending data
         track.pause();
         track.flush();

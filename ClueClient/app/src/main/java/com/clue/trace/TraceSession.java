@@ -214,7 +214,14 @@ public final class TraceSession {
         });
         android.util.Log.i("ClueTrace", "session audio played=" + counters.audioPacketsPlayed.get()
                 + " dropped=" + counters.audioPacketsDropped.get()
-                + " underruns=" + counters.audioUnderruns.get());
+                + " underruns=" + counters.audioUnderruns.get()
+                + " path=" + counters.audioPath
+                + " xruns=" + counters.audioXruns.get()
+                + " driftDropped=" + counters.audioDriftFramesDropped.get()
+                + " driftInserted=" + counters.audioDriftFramesInserted.get()
+                + " bufferFrames=" + counters.audioBufferFrames.get()
+                + " ringUs=" + counters.audioRingUs.get()
+                + " outputLatencyUs=" + counters.audioOutputLatencyUs());
         android.util.Log.i("ClueTrace", "session input events=" + in[0] + " sent=" + in[1]
                 + " avgEventToSentMs=" + (in[1] > 0 ? (in[2] / in[1]) / 1e6 : -1)
                 + " maxEventToSentMs=" + in[3] / 1e6);
