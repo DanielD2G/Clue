@@ -25,10 +25,17 @@ public final class TraceSession {
      */
     private static int pendingInputSlot = -1;
 
-    private TraceSession() {}
+    private final Context appContext;
+    private final java.util.Map<String, String> meta;
 
-    public static TraceSession start(Context ctx) {
-        TraceSession s = new TraceSession();
+    private TraceSession(Context ctx, java.util.Map<String, String> meta) {
+        this.appContext = ctx.getApplicationContext();
+        this.meta = meta;
+    }
+
+    /** Starts tracing a session. {@code meta} is written to summary.txt (resolution, fps, ...). */
+    public static TraceSession start(Context ctx, java.util.Map<String, String> meta) {
+        TraceSession s = new TraceSession(ctx, meta);
         current = s;
         return s;
     }
@@ -106,6 +113,23 @@ public final class TraceSession {
             current = null;
         }
         logSummary();
+        writeAsync();
+    }
+
+    /** Writes the traces to app-specific storage on a background thread. */
+    private void writeAsync() {
+        final java.io.File base = appContext.getExternalFilesDir("traces");
+        if (base == null) {
+            android.util.Log.w("ClueTrace", "no external files dir; trace not written");
+            return;
+        }
+        final String name = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(new java.util.Date());
+        new Thread(() -> {
+            java.io.File dir = new java.io.File(base, name);
+            boolean ok = TraceWriter.write(frames, input, counters, dir, meta);
+            android.util.Log.i("ClueTrace", (ok ? "trace written to " : "trace write FAILED for ") + dir);
+        }, "Clue trace writer").start();
     }
 
     /** One logcat line per session, so a trace can be sanity-checked without pulling files. */

@@ -2549,7 +2549,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             decoderRenderer.setRenderTarget(holder);
 
             // CLUE: start tracing before the first decode unit can arrive
-            clueTraceSession = com.clue.trace.TraceSession.start(Game.this);
+            java.util.Map<String, String> clueMeta = new java.util.LinkedHashMap<>();
+            clueMeta.put("device", Build.MODEL);
+            clueMeta.put("resolution", prefConfig.width + "x" + prefConfig.height);
+            clueMeta.put("fps", String.valueOf(prefConfig.fps));
+            clueMeta.put("bitrateKbps", String.valueOf(prefConfig.bitrate));
+            clueMeta.put("framePacing", String.valueOf(prefConfig.framePacing));
+            clueMeta.put("appVersion", com.limelight.BuildConfig.VERSION_NAME);
+            clueTraceSession = com.clue.trace.TraceSession.start(Game.this, clueMeta);
 
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
