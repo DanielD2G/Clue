@@ -6,7 +6,7 @@ Clue es un fork de [moonlight-android](https://github.com/moonlight-stream/moonl
 
 1. **Performance sobre todo.** Ante la duda, gana la opción más rápida. Nada en el camino caliente puede asignar memoria, bloquear ni esperar sin un tope. Los caminos calientes son la recepción de red, el reensamblado, la decodificación, la presentación, el audio y la entrada.
 2. **Baja latencia sobre todo, especialmente en los mandos.**
-   - La entrada (mandos, mouse, teclado y touch) tiene la máxima prioridad: sale apenas se produce, sin agrupar ni retener eventos.
+   - La entrada (mandos, mouse, teclado y touch) tiene la máxima prioridad del proyecto, por encima del video y del audio: en el aire (WMM AC_VO), en los hilos y en las colas. Sale apenas se produce, sin agrupar ni retener eventos.
    - Mientras pueda seguir siendo fiable, ningún evento de entrada espera detrás de otro.
    - Ninguna cola del pipeline de video crece más allá de un frame.
 3. **Empujamos el hardware.** Primero exprimimos al máximo nuestros equipos de referencia; la compatibilidad genérica viene después.

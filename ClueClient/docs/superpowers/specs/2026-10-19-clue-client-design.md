@@ -113,14 +113,44 @@ Cada hito termina con una medición contra la línea base (§8). Un cambio que n
 - Hilos de recepción, decodificación y presentación con prioridad `URGENT_DISPLAY` y sesión **ADPF** (`PerformanceHintManager`) con el presupuesto de un frame.
 - Se mantienen RFI y LTR de upstream, verificando que RFI quede activo en `c2.qti`.
 
-### H3 — Entrada: mandos primero
+### H3 — Entrada: mandos primero (prioridad máxima del proyecto)
 
-- Se envía en el mismo hilo en que llega el evento, sin agrupar ni retener. Se hace un `requestUnbufferedDispatch` para todas las fuentes, incluidos los mandos.
-- **Estado del mando y mouse relativo sin bloqueo de cabeza de línea.**
-  - Hoy viajan por canales ENet confiables: una pérdida bloquea todo lo que viene detrás. Se evalúa enviarlos como no confiables y secuenciados (gana el más nuevo), con reenvío periódico del último estado.
-  - Antes de adoptarlo hay que verificar que Vibepollo y Sunshine los acepten; si no, se mantiene el camino confiable.
-- Se mide la latencia del mando por USB, Bluetooth y 2,4 GHz, del evento al envío. Se documenta la recomendación de conexión.
-- El touch y la lapicera conservan las muestras históricas que ya envía upstream.
+La entrada tiene **prioridad por encima del video y del audio** en todo el cliente: en el aire, en los hilos y en las colas.
+
+Estado actual de upstream, verificado en el código de v12.2:
+
+- Ya hace bien tres cosas:
+  - `requestUnbufferedDispatch` incluye `SOURCE_CLASS_JOYSTICK`;
+  - cada mando va por su propio canal ENet (`CTRL_CHANNEL_GAMEPAD_BASE + n`);
+  - el paquete en cola se actualiza con el estado más nuevo.
+- Y tiene tres problemas:
+  - el socket ENet de control se crea sin prioridad (*best effort*), mientras que video y audio usan `SO_PRIORITY` 5 y 6;
+  - el estado del mando viaja `ENET_PACKET_FLAG_RELIABLE`, con un TODO para pasarlo a no confiable;
+  - `sendMessageEnet` puede esperar hasta 10 ms, en pasos de 1 ms, a que un paquete confiable salga.
+
+Cambios:
+
+1. **Prioridad en el aire (WMM AC_VO).**
+   - El socket de control/entrada se marca con `SO_PRIORITY` 6–7 y DSCP EF (`IP_TOS` 0xB8), para que el driver Wi-Fi lo mande por la cola de voz.
+   - Se verifica en captura que la marca llegue y que no rompa nada contra Vibepollo y Sunshine.
+   - Se mide la latencia de subida bajo la carga de video, con y sin la marca.
+2. **Sin bloqueo de cabeza de línea.**
+   - El estado de los mandos y el mouse relativo viajan **no confiables y secuenciados**: gana el más nuevo.
+   - Para resistir pérdidas, el último estado se reenvía cada pocos ms mientras haya entrada activa (intervalo a medir; por ejemplo 4 ms).
+   - Los cambios de botón se mandan además por duplicado, en dos datagramas.
+   - Se elimina la espera de backpressure de hasta 10 ms para estos paquetes.
+   - Se adopta solo si Vibepollo y Sunshine los procesan correctamente; si no, queda el camino confiable con la prioridad del punto 1.
+3. **Envío inmediato.** El evento se envía en el mismo hilo en que llega, sin agrupar con otros mandos ni retener. El hilo de entrada tiene la prioridad más alta de la app.
+4. **Enlace del mando.**
+   - Clue detecta si el mando está conectado por USB, Bluetooth o receptor de 2,4 GHz, y estima su tasa de reportes a partir de los timestamps de los eventos.
+   - Muestra la latencia medida y recomienda la mejor conexión disponible: cable o 2,4 GHz a 1000 Hz.
+5. **Modo de prueba botón → pantalla, automático.**
+   - Clue envía una pulsación sintética y anota el instante.
+   - En el host, una página o app liviana que lee el mando virtual (por ejemplo, la Gamepad API del navegador) cambia de color al recibirla.
+   - Clue detecta el cambio en el video recibido, con una lectura de una región chica de la superficie.
+   - Resultado: latencia de entrada de punta a punta en ms (p50 y p99), sin cámara. Es la métrica oficial de H3.
+6. El touch y la lapicera conservan las muestras históricas que ya envía upstream.
+7. **Más adelante, con el host:** un canal de entrada propio con timestamps e inyección inmediata (extensión `x-clue-`, segunda spec).
 
 ### H4 — Audio
 
@@ -163,6 +193,8 @@ Cada hito termina con una medición contra la línea base (§8). Un cambio que n
 | Del último paquete a la presentación, p50 | ≤ línea base − 1 frame (≈ 8 ms) |
 | Del último paquete a la presentación, p99 | ≤ 2 frames |
 | Del evento de entrada al envío, p99 | ≤ 1 ms |
+| Botón → pantalla (modo de prueba, H3), p50 / p99 | Se fija con la primera medición; cada cambio de H3 tiene que bajarlo |
+| Pérdida de un paquete de mando | No traba la entrada: el siguiente estado llega en ≤ 1 intervalo de reenvío |
 | Audio descartado en 10 min | 0 |
 | Overhead de la instrumentación | ≤ 1 % de CPU |
 
@@ -179,6 +211,8 @@ Estos números son objetivos iniciales, propuestos por el agente: se ajustan con
 | Upstream por `git subtree` conservando el historial | Agente |
 | Orden de hitos H0 → H1 → H2 → H3 → H4 → H5 → H6, con H1 antes de toda optimización | Agente |
 | Colchón adaptativo de 0 o 1 frame en el presentador | Agente |
+| La entrada tiene prioridad máxima, por encima del video y del audio | Usuario |
+| Mejoras de H3: AC_VO, no confiable con redundancia, detección del enlace, prueba botón → pantalla | Usuario (aprobado); detalles como el intervalo de reenvío, del agente |
 | Prefijo `x-clue-` para las extensiones | Agente |
 | Objetivos numéricos de §8 | Agente (provisorios) |
 
