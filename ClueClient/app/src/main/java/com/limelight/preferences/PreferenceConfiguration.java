@@ -70,7 +70,7 @@ public class PreferenceConfiguration {
     private static final String GAMEPAD_MOTION_FALLBACK_PREF_STRING = "checkbox_gamepad_motion_fallback";
 
     static final String DEFAULT_RESOLUTION = "1280x720";
-    static final String DEFAULT_FPS = "60";
+    static final String DEFAULT_FPS = com.clue.defaults.ClueDefaults.FPS; // CLUE: was "60"
     private static final boolean DEFAULT_STRETCH = false;
     private static final boolean DEFAULT_SOPS = true;
     private static final boolean DEFAULT_DISABLE_TOASTS = false;
@@ -87,7 +87,7 @@ public class PreferenceConfiguration {
     private static final boolean SHOW_GUIDE_BUTTON_DEFAULT = true;
     private static final boolean DEFAULT_ENABLE_HDR = false;
     private static final boolean DEFAULT_ENABLE_PIP = false;
-    private static final boolean DEFAULT_ENABLE_PERF_OVERLAY = false;
+    private static final boolean DEFAULT_ENABLE_PERF_OVERLAY = com.clue.defaults.ClueDefaults.PERF_OVERLAY; // CLUE: was false
     private static final boolean DEFAULT_BIND_ALL_USB = false;
     private static final boolean DEFAULT_MOUSE_EMULATION = true;
     private static final String DEFAULT_ANALOG_STICK_FOR_SCROLLING = "right";
@@ -100,7 +100,7 @@ public class PreferenceConfiguration {
     private static final boolean DEFAULT_TOUCHSCREEN_TRACKPAD = true;
     private static final String DEFAULT_AUDIO_CONFIG = "2"; // Stereo
     private static final boolean DEFAULT_LATENCY_TOAST = false;
-    private static final String DEFAULT_FRAME_PACING = "latency";
+    private static final String DEFAULT_FRAME_PACING = com.clue.defaults.ClueDefaults.FRAME_PACING; // CLUE: was "latency"
     private static final boolean DEFAULT_ABSOLUTE_MOUSE_MODE = false;
     private static final boolean DEFAULT_ENABLE_AUDIO_FX = false;
     private static final boolean DEFAULT_REDUCE_REFRESH_RATE = false;
@@ -337,6 +337,40 @@ public class PreferenceConfiguration {
 
         // Use small mode on anything smaller than a 7" tablet
         return context.getResources().getConfiguration().smallestScreenWidthDp < 500;
+    }
+
+    // CLUE: first-run defaults that the XML can't express (native resolution and a fixed
+    // bitrate). Must run before PreferenceManager.setDefaultValues(), which only fills
+    // keys that are still missing.
+    public static void applyClueFirstRunDefaults(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences.Editor editor = prefs.edit();
+        boolean changed = false;
+
+        if (!prefs.contains(RESOLUTION_PREF_STRING) && !prefs.contains(LEGACY_RES_FPS_PREF_STRING)) {
+            String nativeRes = DEFAULT_RESOLUTION;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                android.hardware.display.DisplayManager dm =
+                        (android.hardware.display.DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+                android.view.Display display = dm != null ? dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) : null;
+                if (display != null) {
+                    android.view.Display.Mode mode = display.getMode();
+                    nativeRes = com.clue.defaults.ClueDefaults.nativeResolution(
+                            mode.getPhysicalWidth(), mode.getPhysicalHeight());
+                }
+            }
+            editor.putString(RESOLUTION_PREF_STRING, nativeRes);
+            changed = true;
+        }
+
+        if (!prefs.contains(BITRATE_PREF_STRING) && !prefs.contains(BITRATE_PREF_OLD_STRING)) {
+            editor.putInt(BITRATE_PREF_STRING, com.clue.defaults.ClueDefaults.BITRATE_KBPS);
+            changed = true;
+        }
+
+        if (changed) {
+            editor.apply();
+        }
     }
 
     public static int getDefaultBitrate(Context context) {

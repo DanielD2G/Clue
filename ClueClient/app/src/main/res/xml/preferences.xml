@@ -17,7 +17,7 @@
             android:summary="@string/summary_fps_list"
             android:entries="@array/fps_names"
             android:entryValues="@array/fps_values"
-            android:defaultValue="60" />
+            android:defaultValue="120" />
         <com.limelight.preferences.SeekBarPreference
             android:key="seekbar_bitrate_kbps"
             android:dialogMessage="@string/summary_seekbar_bitrate"
@@ -35,7 +35,7 @@
             android:entries="@array/video_frame_pacing_names"
             android:entryValues="@array/video_frame_pacing_values"
             android:summary="@string/summary_frame_pacing"
-            android:defaultValue="latency" />
+            android:defaultValue="balanced" />
         <CheckBoxPreference
             android:key="checkbox_stretch_video"
             android:title="@string/title_checkbox_stretch_video"
@@ -262,7 +262,7 @@
             android:key="checkbox_enable_perf_overlay"
             android:title="@string/title_enable_perf_overlay"
             android:summary="@string/summary_enable_perf_overlay"
-            android:defaultValue="false"/>
+            android:defaultValue="true"/>
         <CheckBoxPreference
             android:key="checkbox_enable_post_stream_toast"
             android:title="@string/title_enable_post_stream_toast"

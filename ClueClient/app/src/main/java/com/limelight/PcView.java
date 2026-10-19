@@ -130,6 +130,9 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             setShouldDockBigOverlays(false);
         }
 
+        // CLUE: write reference-hardware defaults (native resolution, 80 Mbps) first
+        PreferenceConfiguration.applyClueFirstRunDefaults(this);
+
         // Set default preferences if we've never been run
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
 

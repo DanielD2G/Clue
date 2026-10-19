@@ -43,3 +43,13 @@ Los tests de JVM se corren con:
 ```bash
 ./gradlew :app:testNonRootDebugUnitTest
 ```
+
+## Instalar en la tablet
+
+Para compilar e instalar la release en el dispositivo conectado:
+
+```bash
+tools/build-install.sh release
+```
+
+En HyperOS (Xiaomi/POCO) hay que activar "Instalar vía USB" en las opciones de desarrollador. Además, la primera vez hay que aceptar en la tablet el aviso de instalación; si no se activa esa opción, la instalación falla con `INSTALL_FAILED_USER_RESTRICTED`.
