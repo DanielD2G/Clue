@@ -28,6 +28,8 @@ uint32_t ClueRingWrite(CLUE_AUDIO_RING* r, const int16_t* pcm, uint32_t frames);
 uint32_t ClueRingRead(CLUE_AUDIO_RING* r, int16_t* out, uint32_t frames);
 // Consumer: discards everything queued.
 void ClueRingFlush(CLUE_AUDIO_RING* r);
+// Consumer: discards up to `frames` of the oldest queued frames, returns how many.
+uint32_t ClueRingSkip(CLUE_AUDIO_RING* r, uint32_t frames);
 
 // Drift control. The ring level is sampled just before each packet is written. Per window
 // (~1 s) it keeps the mean level and the lowest level. The controller steers a filtered mean
@@ -36,6 +38,8 @@ void ClueRingFlush(CLUE_AUDIO_RING* r);
 // not make it chase; target is the margin left at the lowest point and only underruns raise it.
 typedef struct {
     // Configuration (frames / packets)
+    int32_t burst;           // consumer callback size
+    int32_t startExcess;     // start-up backlog threshold above the level (max(burst, 20 ms))
     int32_t minTarget;       // initial and lowest target: one burst, at least 2 ms
     int32_t maxTarget;       // cap after repeated underruns (40 ms)
     int32_t raiseStep;       // target change per underrun / per decay (half a burst, >= 1 ms)
@@ -67,6 +71,12 @@ void ClueDriftRestart(CLUE_AUDIO_DRIFT* d);
 // The consumer ran dry. Outside the grace period this raises the target one step (up to the
 // cap). Returns 1 if the target was raised.
 int32_t ClueDriftOnUnderrun(CLUE_AUDIO_DRIFT* d);
+// Start-up backlog: within the grace period after (re)start (~2 s), moonlight-common-c may
+// hand over audio the host queued before the stream was ready, in one burst. If the ring is
+// more than startExcess above level = max(setpoint, target + packet), returns how many frames to
+// discard at once to get back to level + one burst (and restarts the window stats); otherwise 0.
+// Call before ClueDriftOnPacket, which then gets the fill minus the discarded frames.
+int32_t ClueDriftStartupTrim(CLUE_AUDIO_DRIFT* d, int32_t fillFrames, int32_t packetFrames);
 // Called once per decoded packet with the ring fill seen just before writing it.
 // Returns the number of frames to drop (> 0) or duplicate (< 0) in this packet; never more
 // than 4, never more than packetFrames / 8, and never both signs within one window.

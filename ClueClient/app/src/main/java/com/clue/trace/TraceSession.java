@@ -223,7 +223,13 @@ public final class TraceSession {
                 + " ringUs=" + counters.audioRingUs.get()
                 + " ringTargetUs=" + counters.audioRingTargetUs.get()
                 + " ringSetpointUs=" + counters.audioRingSetpointUs.get()
-                + " outputLatencyUs=" + counters.audioOutputLatencyUs());
+                + " outputLatencyUs=" + counters.audioOutputLatencyUs()
+                + " trimmed=" + counters.audioStartupTrimmedFrames.get()
+                + " | steady (after 3 s): ringUs=" + counters.audioRingSteadyUs.get()
+                + " underruns=" + counters.audioUnderrunsSteady.get()
+                + " driftDropped=" + counters.audioDriftFramesDroppedSteady.get()
+                + " driftInserted=" + counters.audioDriftFramesInsertedSteady.get()
+                + " outputLatencyUs=" + counters.audioOutputLatencySteadyUs());
         android.util.Log.i("ClueTrace", "session input events=" + in[0] + " sent=" + in[1]
                 + " avgEventToSentMs=" + (in[1] > 0 ? (in[2] / in[1]) / 1e6 : -1)
                 + " maxEventToSentMs=" + in[3] / 1e6);

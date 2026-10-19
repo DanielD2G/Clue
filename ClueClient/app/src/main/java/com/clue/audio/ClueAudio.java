@@ -33,7 +33,12 @@ public final class ClueAudio {
     public static final int STAT_REOPENS = 13;
     public static final int STAT_FRAMES_LOST = 14;
     public static final int STAT_SETPOINT_FRAMES = 15;
-    public static final int STAT_COUNT = 16;
+    public static final int STAT_RING_STEADY_US = 16;
+    public static final int STAT_UNDERRUNS_STEADY = 17;
+    public static final int STAT_DRIFT_DROPPED_STEADY = 18;
+    public static final int STAT_DRIFT_INSERTED_STEADY = 19;
+    public static final int STAT_TRIMMED_FRAMES = 20;
+    public static final int STAT_COUNT = 21;
 
     private ClueAudio() {
     }
@@ -67,6 +72,11 @@ public final class ClueAudio {
         c.audioDriftFramesInserted.set(s[STAT_DRIFT_INSERTED]);
         c.audioRingUs.set(s[STAT_RING_MEAN_US]);
         c.audioBufferFrames.set(s[STAT_BUFFER_FRAMES]);
+        c.audioRingSteadyUs.set(s[STAT_RING_STEADY_US]);
+        c.audioUnderrunsSteady.set(s[STAT_UNDERRUNS_STEADY]);
+        c.audioDriftFramesDroppedSteady.set(s[STAT_DRIFT_DROPPED_STEADY]);
+        c.audioDriftFramesInsertedSteady.set(s[STAT_DRIFT_INSERTED_STEADY]);
+        c.audioStartupTrimmedFrames.set(s[STAT_TRIMMED_FRAMES]);
         long rate = s[STAT_SAMPLE_RATE];
         if (rate > 0) {
             c.audioRingTargetUs.set(s[STAT_TARGET_FRAMES] * 1_000_000L / rate);
@@ -99,10 +109,19 @@ public final class ClueAudio {
             apply(stats, n, com.clue.trace.TraceSession.activeCounters());
         }
 
+        /** Logs one ClueAudio diagnostics line covering the time since the previous one. */
+        public void logInterval() {
+            com.limelight.nvstream.jni.MoonBridge.clueAudioLogInterval();
+        }
+
         @Override
         public void run() {
+            int polls = 0;
             while (running) {
                 pollOnce();
+                if (++polls % 10 == 0) { // every 5 s
+                    logInterval();
+                }
                 try {
                     Thread.sleep(500);
                 } catch (InterruptedException e) {

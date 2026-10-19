@@ -6,7 +6,10 @@
 //     ring. It never blocks: if the ring is full the rest of the packet is dropped and counted.
 //   - AAudio's real-time callback thread pulls frames from the ring. If the ring runs dry it
 //     plays silence, counts an underrun and waits for the ring to refill to the prime level.
-//   - The Java stats thread polls clueAudioGetStats() (timestamps, XRuns) under streamLock.
+//     During the first ~2 s it also discards a start-up backlog at once when the producer asks
+//     (trimRequest), instead of letting drift control drain it gradually.
+//   - The Java stats thread polls clueAudioGetStats() (timestamps, XRuns) under streamLock, and
+//     logs clueAudioLogInterval() every 5 s.
 //   - A short-lived thread reopens the stream after AAUDIO_ERROR_DISCONNECTED (device change).
 //
 // AAudio is loaded with dlopen, because minSdk is 21 and libaaudio.so only exists on API 26+.
@@ -17,6 +20,7 @@
 #include <aaudio/AAudio.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -99,16 +103,33 @@ static unsigned underrunsSeen;
 static unsigned packetsSinceXrunCheck;
 static int64_t lastWriteNs;
 static unsigned reopensSeen;
+static unsigned packetsSinceOpen;  // for the steady-state stats
+static unsigned steadyPackets;     // packets in the first STEADY_AFTER_S seconds
 
 // Consumer (callback) state
 static int primed;
 static atomic_int primeFrames;
 static atomic_bool flushRequest;
+static atomic_int trimRequest;     // frames the producer asks the callback to discard at once
+static uint64_t framesSinceOpen;   // frames handed to AAudio since open, for the steady-state stats
 
-// Stats
+// Stats. "Steady" ones leave out the first STEADY_AFTER_S seconds after open.
+#define STEADY_AFTER_S 3
 static atomic_uint underruns;
 static atomic_ullong statPlayed, statDropped, statFramesLost, statDriftDropped, statDriftInserted;
 static atomic_ullong statFillSum, statFillSamples;
+static atomic_ullong statFillSumSteady, statFillSamplesSteady;
+static atomic_uint statUnderrunsSteady;
+static atomic_ullong statDriftDroppedSteady, statDriftInsertedSteady, statTrimmed;
+static atomic_int intervalMinFill;  // lowest ring level after a read since the last diagnostics line
+
+// Counter values at the last diagnostics line (stats thread only)
+static struct {
+    int64_t ns;
+    unsigned long long fillSum, fillSamples, driftDropped, driftInserted, trimmed;
+    unsigned underruns;
+    long long xruns;
+} diagLast;
 static atomic_llong statXrunsBase; // XRuns of streams already closed
 static atomic_int statXrunsNow;
 static atomic_int statBufferFrames, statBurstFrames, statExclusive, statSampleRate, statReopens;
@@ -118,6 +139,13 @@ static int64_t monoNowNs(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
+static jlong meanUs(unsigned long long sumFrames, unsigned long long samples, int rate) {
+    if (samples == 0 || rate <= 0) {
+        return -1;
+    }
+    return (jlong)(sumFrames * 1000000ULL / samples / (unsigned)rate);
 }
 
 static int loadAAudio(void) {
@@ -179,9 +207,18 @@ static aaudio_data_callback_result_t dataCallback(AAudioStream* s, void* user, v
     int16_t* out = (int16_t*)audioData;
     size_t frameBytes = (size_t)channelCount * sizeof(int16_t);
 
+    int steady = framesSinceOpen >= (uint64_t)STEADY_AFTER_S * (uint64_t)sampleRate;
+    framesSinceOpen += (uint64_t)numFrames;
+
     if (atomic_exchange_explicit(&flushRequest, false, memory_order_acq_rel)) {
         ClueRingFlush(&ring);
+        atomic_store_explicit(&trimRequest, 0, memory_order_relaxed);
         primed = 0;
+    }
+    // Start-up backlog the producer wants gone at once (ClueDriftStartupTrim)
+    int trim = atomic_exchange_explicit(&trimRequest, 0, memory_order_acq_rel);
+    if (trim > 0) {
+        ClueRingSkip(&ring, (uint32_t)trim);
     }
     if (!primed) {
         if ((int32_t)ClueRingFill(&ring) < atomic_load_explicit(&primeFrames, memory_order_relaxed)) {
@@ -194,13 +231,27 @@ static aaudio_data_callback_result_t dataCallback(AAudioStream* s, void* user, v
     // Ring occupancy as played: halfway through this read, sampled once per callback (evenly in time)
     uint32_t fillBefore = ClueRingFill(&ring);
     uint32_t half = (uint32_t)numFrames / 2;
-    atomic_fetch_add_explicit(&statFillSum, fillBefore > half ? fillBefore - half : 0, memory_order_relaxed);
+    unsigned long long occ = fillBefore > half ? fillBefore - half : 0;
+    atomic_fetch_add_explicit(&statFillSum, occ, memory_order_relaxed);
     atomic_fetch_add_explicit(&statFillSamples, 1, memory_order_relaxed);
+    if (steady) {
+        atomic_fetch_add_explicit(&statFillSumSteady, occ, memory_order_relaxed);
+        atomic_fetch_add_explicit(&statFillSamplesSteady, 1, memory_order_relaxed);
+    }
 
     uint32_t got = ClueRingRead(&ring, out, (uint32_t)numFrames);
+    // Lowest level left after a read: the margin the ring kept against the next packet
+    int after = (int)(fillBefore - got);
+    int cur = atomic_load_explicit(&intervalMinFill, memory_order_relaxed);
+    while (after < cur && !atomic_compare_exchange_weak_explicit(&intervalMinFill, &cur, after,
+                                                                 memory_order_relaxed, memory_order_relaxed)) {
+    }
     if (got < (uint32_t)numFrames) {
         memset(out + (size_t)got * channelCount, 0, (size_t)(numFrames - got) * frameBytes);
         atomic_fetch_add_explicit(&underruns, 1, memory_order_relaxed);
+        if (steady) {
+            atomic_fetch_add_explicit(&statUnderrunsSteady, 1, memory_order_relaxed);
+        }
         primed = 0;
     }
     return AAUDIO_CALLBACK_RESULT_CONTINUE;
@@ -378,7 +429,24 @@ void clueAudioWrite(const int16_t* pcm, int frames) {
         ClueDriftOnUnderrun(&drift);
     }
 
-    int32_t fill = (int32_t)ClueRingFill(&ring);
+    int steady = packetsSinceOpen >= steadyPackets;
+    if (!steady) {
+        packetsSinceOpen++;
+    }
+
+    // Frames already handed to the callback for discarding are as good as gone
+    int32_t fill = (int32_t)ClueRingFill(&ring) - atomic_load_explicit(&trimRequest, memory_order_acquire);
+    if (fill < 0) {
+        fill = 0;
+    }
+    if (atomic_load_explicit(&trimRequest, memory_order_relaxed) == 0) {
+        int32_t trim = ClueDriftStartupTrim(&drift, fill, frames);
+        if (trim > 0) {
+            atomic_store_explicit(&trimRequest, trim, memory_order_release);
+            atomic_fetch_add_explicit(&statTrimmed, (unsigned long long)trim, memory_order_relaxed);
+            fill -= trim;
+        }
+    }
     int32_t adj = ClueDriftOnPacket(&drift, fill, frames);
     atomic_store_explicit(&primeFrames, ClueDriftPrimeFrames(&drift, packetFrames), memory_order_relaxed);
 
@@ -387,10 +455,11 @@ void clueAudioWrite(const int16_t* pcm, int frames) {
     if (adj != 0) {
         n = ClueDriftApply(pcm, frames, channelCount, adj, driftBuf);
         src = driftBuf;
-        if (n < frames) {
-            atomic_fetch_add_explicit(&statDriftDropped, (unsigned long long)(frames - n), memory_order_relaxed);
-        } else {
-            atomic_fetch_add_explicit(&statDriftInserted, (unsigned long long)(n - frames), memory_order_relaxed);
+        unsigned long long changed = (unsigned long long)(n < frames ? frames - n : n - frames);
+        atomic_fetch_add_explicit(n < frames ? &statDriftDropped : &statDriftInserted, changed, memory_order_relaxed);
+        if (steady) {
+            atomic_fetch_add_explicit(n < frames ? &statDriftDroppedSteady : &statDriftInsertedSteady,
+                                      changed, memory_order_relaxed);
         }
     }
 
@@ -453,6 +522,19 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueAudioOpen(JNIEnv* env, jclass cla
     atomic_store(&statXrunsBase, 0);
     atomic_store(&statXrunsNow, 0);
     atomic_store(&statReopens, 0);
+    atomic_store(&statFillSumSteady, 0);
+    atomic_store(&statFillSamplesSteady, 0);
+    atomic_store(&statUnderrunsSteady, 0);
+    atomic_store(&statDriftDroppedSteady, 0);
+    atomic_store(&statDriftInsertedSteady, 0);
+    atomic_store(&statTrimmed, 0);
+    atomic_store(&trimRequest, 0);
+    atomic_store(&intervalMinFill, INT_MAX);
+    framesSinceOpen = 0;
+    packetsSinceOpen = 0;
+    steadyPackets = samplesPerFrame > 0 ? (unsigned)(STEADY_AFTER_S * rate / samplesPerFrame) : 0;
+    memset(&diagLast, 0, sizeof(diagLast));
+    diagLast.ns = monoNowNs();
     atomic_store(&closing, false);
 
     pthread_mutex_lock(&streamLock);
@@ -515,15 +597,18 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueAudioGetStats(JNIEnv* env, jclass
     pthread_mutex_unlock(&streamLock);
 
     int rate = atomic_load(&statSampleRate);
-    unsigned long long samples = atomic_load(&statFillSamples);
     s[CLUE_AUDIO_STAT_PLAYED] = (jlong)atomic_load(&statPlayed);
     s[CLUE_AUDIO_STAT_DROPPED] = (jlong)atomic_load(&statDropped);
     s[CLUE_AUDIO_STAT_UNDERRUNS] = (jlong)atomic_load(&underruns);
     s[CLUE_AUDIO_STAT_XRUNS] = (jlong)atomic_load(&statXrunsBase) + atomic_load(&statXrunsNow);
     s[CLUE_AUDIO_STAT_DRIFT_DROPPED] = (jlong)atomic_load(&statDriftDropped);
     s[CLUE_AUDIO_STAT_DRIFT_INSERTED] = (jlong)atomic_load(&statDriftInserted);
-    s[CLUE_AUDIO_STAT_RING_MEAN_US] = samples > 0 && rate > 0
-            ? (jlong)(atomic_load(&statFillSum) / samples * 1000000ULL / (unsigned)rate) : -1;
+    s[CLUE_AUDIO_STAT_RING_MEAN_US] = meanUs(atomic_load(&statFillSum), atomic_load(&statFillSamples), rate);
+    s[CLUE_AUDIO_STAT_RING_STEADY_US] = meanUs(atomic_load(&statFillSumSteady), atomic_load(&statFillSamplesSteady), rate);
+    s[CLUE_AUDIO_STAT_UNDERRUNS_STEADY] = atomic_load(&statUnderrunsSteady);
+    s[CLUE_AUDIO_STAT_DRIFT_DROPPED_STEADY] = (jlong)atomic_load(&statDriftDroppedSteady);
+    s[CLUE_AUDIO_STAT_DRIFT_INSERTED_STEADY] = (jlong)atomic_load(&statDriftInsertedSteady);
+    s[CLUE_AUDIO_STAT_TRIMMED_FRAMES] = (jlong)atomic_load(&statTrimmed);
     s[CLUE_AUDIO_STAT_BUFFER_FRAMES] = atomic_load(&statBufferFrames);
     s[CLUE_AUDIO_STAT_BURST_FRAMES] = atomic_load(&statBurstFrames);
     s[CLUE_AUDIO_STAT_EXCLUSIVE] = atomic_load(&statExclusive);
@@ -539,4 +624,42 @@ Java_com_limelight_nvstream_jni_MoonBridge_clueAudioGetStats(JNIEnv* env, jclass
     }
     (*env)->SetLongArrayRegion(env, out, 0, n, s);
     return n;
+}
+
+// One logcat line per call (the Java stats thread calls it every 5 s) with what happened since
+// the previous one, to tell start-up effects from steady-state ones.
+JNIEXPORT void JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_clueAudioLogInterval(JNIEnv* env, jclass clazz) {
+    int rate = atomic_load(&statSampleRate);
+    if (!atomic_load(&active) || rate <= 0) {
+        return;
+    }
+    int64_t now = monoNowNs();
+    unsigned long long fillSum = atomic_load(&statFillSum), fillSamples = atomic_load(&statFillSamples);
+    unsigned long long dropped = atomic_load(&statDriftDropped), inserted = atomic_load(&statDriftInserted);
+    unsigned long long trimmed = atomic_load(&statTrimmed);
+    unsigned under = atomic_load(&underruns);
+    long long xruns = atomic_load(&statXrunsBase) + atomic_load(&statXrunsNow);
+    int minFill = atomic_exchange(&intervalMinFill, INT_MAX);
+    double msPerFrame = 1000.0 / rate;
+    unsigned long long dSamples = fillSamples - diagLast.fillSamples;
+
+    LOGI("last %.1f s: ring mean %.1f ms min %.1f ms, setpoint %.1f ms, target %.1f ms, "
+         "drift -%llu/+%llu frames, trimmed %llu, underruns %u, xruns %lld, buffer %d",
+         (now - diagLast.ns) / 1e9,
+         dSamples > 0 ? (double)(fillSum - diagLast.fillSum) / dSamples * msPerFrame : -1.0,
+         minFill != INT_MAX ? minFill * msPerFrame : -1.0,
+         atomic_load(&statSetpoint) * msPerFrame,
+         (atomic_load(&primeFrames) - packetFrames) * msPerFrame,
+         dropped - diagLast.driftDropped, inserted - diagLast.driftInserted, trimmed - diagLast.trimmed,
+         under - diagLast.underruns, xruns - diagLast.xruns, atomic_load(&statBufferFrames));
+
+    diagLast.ns = now;
+    diagLast.fillSum = fillSum;
+    diagLast.fillSamples = fillSamples;
+    diagLast.driftDropped = dropped;
+    diagLast.driftInserted = inserted;
+    diagLast.trimmed = trimmed;
+    diagLast.underruns = under;
+    diagLast.xruns = xruns;
 }

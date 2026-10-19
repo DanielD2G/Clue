@@ -29,5 +29,11 @@ enum {
     CLUE_AUDIO_STAT_REOPENS,             // streams reopened after a device change
     CLUE_AUDIO_STAT_FRAMES_LOST,         // frames that did not fit in the ring
     CLUE_AUDIO_STAT_SETPOINT_FRAMES,     // drift control setpoint of the mean ring level (target + jitter)
+    // Same as above, leaving out the first 3 s after open ("steady")
+    CLUE_AUDIO_STAT_RING_STEADY_US,
+    CLUE_AUDIO_STAT_UNDERRUNS_STEADY,
+    CLUE_AUDIO_STAT_DRIFT_DROPPED_STEADY,
+    CLUE_AUDIO_STAT_DRIFT_INSERTED_STEADY,
+    CLUE_AUDIO_STAT_TRIMMED_FRAMES,      // start-up backlog discarded at once
     CLUE_AUDIO_STAT_COUNT
 };

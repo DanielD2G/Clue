@@ -47,6 +47,11 @@ public class ClueAudioTest {
         s[ClueAudio.STAT_SAMPLE_RATE] = 48000;
         s[ClueAudio.STAT_TARGET_FRAMES] = 192;
         s[ClueAudio.STAT_SETPOINT_FRAMES] = 336;
+        s[ClueAudio.STAT_RING_STEADY_US] = 3500;
+        s[ClueAudio.STAT_UNDERRUNS_STEADY] = 1;
+        s[ClueAudio.STAT_DRIFT_DROPPED_STEADY] = 30;
+        s[ClueAudio.STAT_DRIFT_INSERTED_STEADY] = 4;
+        s[ClueAudio.STAT_TRIMMED_FRAMES] = 6500;
         return s;
     }
 
@@ -66,6 +71,13 @@ public class ClueAudioTest {
         assertEquals(13500, c.audioOutputLatencyUs());
         assertEquals(4000, c.audioRingTargetUs.get());
         assertEquals(7000, c.audioRingSetpointUs.get());
+        // Steady state leaves the first 3 s out; totals stay as they are
+        assertEquals(3500, c.audioRingSteadyUs.get());
+        assertEquals(1, c.audioUnderrunsSteady.get());
+        assertEquals(30, c.audioDriftFramesDroppedSteady.get());
+        assertEquals(4, c.audioDriftFramesInsertedSteady.get());
+        assertEquals(6500, c.audioStartupTrimmedFrames.get());
+        assertEquals(12500, c.audioOutputLatencySteadyUs());
     }
 
     @Test

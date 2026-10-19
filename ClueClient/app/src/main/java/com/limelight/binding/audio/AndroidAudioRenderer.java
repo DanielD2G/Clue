@@ -259,6 +259,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
         if (clueAAudio != null) { // CLUE: last latency sample while the stream still runs
             clueAAudio.shutdown();
             clueAAudio.pollOnce();
+            clueAAudio.logInterval();
             return;
         }
         if (enableAudioFx) {
