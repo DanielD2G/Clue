@@ -17,6 +17,7 @@ public final class TraceSession {
     private final FrameTrace frames = new FrameTrace(FRAME_CAPACITY);
     private final InputTrace input = new InputTrace(INPUT_CAPACITY);
     private final SessionCounters counters = new SessionCounters();
+    private final PresenterTrace presenter = new PresenterTrace(1 << 15);
 
     /**
      * Slot of the keyboard/mouse/touch event currently being dispatched on the UI thread,
@@ -48,6 +49,12 @@ public final class TraceSession {
     public static FrameTrace activeFrames() {
         TraceSession s = current;
         return s != null ? s.frames : null;
+    }
+
+    /** Presenter inputs of the active session, or null. */
+    public static PresenterTrace activePresenter() {
+        TraceSession s = current;
+        return s != null ? s.presenter : null;
     }
 
     /** Input trace of the active session, or null. */
@@ -127,7 +134,8 @@ public final class TraceSession {
                 .format(new java.util.Date());
         new Thread(() -> {
             java.io.File dir = new java.io.File(base, name);
-            boolean ok = TraceWriter.write(frames, input, counters, dir, meta);
+            boolean ok = TraceWriter.write(frames, input, counters, dir, meta)
+                    && TraceWriter.writePresenter(presenter, dir);
             android.util.Log.i("ClueTrace", (ok ? "trace written to " : "trace write FAILED for ") + dir);
         }, "Clue trace writer").start();
     }

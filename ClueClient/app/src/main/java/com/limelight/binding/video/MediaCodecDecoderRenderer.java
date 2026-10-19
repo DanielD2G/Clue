@@ -124,6 +124,39 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private final com.clue.video.PresentPolicy cluePolicy = new com.clue.video.PresentPolicy(
             com.clue.video.PresentPolicy.DEFAULT_SAFETY_NS, com.clue.video.PresentPolicy.DEFAULT_HYSTERESIS_NS);
     private com.clue.video.ClueVsyncSource clueVsync;
+    // CLUE: host capture time per codec PTS, written by the input thread and read at decode-out.
+    // Each slot is an independent long pair; a torn read only makes one lookup miss.
+    private static final int CLUE_HOST_SLOTS = 32;
+    private final long[] clueCodecPtsUs = new long[CLUE_HOST_SLOTS];
+    private final long[] clueHostTimeUs = new long[CLUE_HOST_SLOTS];
+    private volatile int clueHostHead;
+
+    private void clueRememberHostTime(long codecPtsUs, long hostTimeUs) {
+        int slot = clueHostHead;
+        clueHostTimeUs[slot] = hostTimeUs;
+        clueCodecPtsUs[slot] = codecPtsUs;
+        clueHostHead = (slot + 1) % CLUE_HOST_SLOTS;
+    }
+
+    /** Records a decoded frame's host time and decode-out time for offline presenter replay. */
+    private void clueRecordPresenterInput(long codecPtsUs) {
+        com.clue.trace.PresenterTrace pt = com.clue.trace.TraceSession.activePresenter();
+        if (pt != null) {
+            pt.onFrame(clueHostTimeNs(codecPtsUs), System.nanoTime(), 0);
+        }
+    }
+
+    /** Host capture time in ns for a codec output PTS, or -1 if it is no longer remembered. */
+    private long clueHostTimeNs(long codecPtsUs) {
+        int slot = clueHostHead;
+        for (int i = 0; i < CLUE_HOST_SLOTS; i++) {
+            slot = (slot + CLUE_HOST_SLOTS - 1) % CLUE_HOST_SLOTS;
+            if (clueCodecPtsUs[slot] == codecPtsUs) {
+                return clueHostTimeUs[slot] * 1000L;
+            }
+        }
+        return -1;
+    }
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
     private HandlerThread choreographerHandlerThread;
@@ -1083,6 +1116,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                             com.clue.trace.FrameTrace clueFt = com.clue.trace.TraceSession.activeFrames();
                             if (clueFt != null) {
                                 clueFt.onDecodeOutput(presentationTimeUs, System.nanoTime());
+                                clueRecordPresenterInput(presentationTimeUs);
                             }
                             if (outIndex < cluePtsByOutputIndex.length) {
                                 cluePtsByOutputIndex[outIndex] = presentationTimeUs;
@@ -1104,6 +1138,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                     // CLUE: newer output superseded the previous one
                                     if (clueFt != null) {
                                         clueFt.onDecodeOutput(presentationTimeUs, System.nanoTime());
+                                        clueRecordPresenterInput(presentationTimeUs);
                                     }
                                 }
 
@@ -1115,8 +1150,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 }
                                 else if (clueMode()) {
                                     // CLUE: target the vsync chosen by the presenter policy; until the
-                                    // first vsync arrives, behave like the lowest latency mode
-                                    clueTargetNs = cluePolicy.targetFor(System.nanoTime());
+                                    // first vsync arrives or if the frame's host time is unknown, behave like the lowest latency mode
+                                    long clueHostNs = clueHostTimeNs(presentationTimeUs);
+                                    clueTargetNs = clueHostNs < 0 ? 0 :
+                                            cluePolicy.targetFor(System.nanoTime(), clueHostNs);
                                     videoDecoder.releaseOutputBuffer(lastIndex,
                                             clueTargetNs != 0 ? clueTargetNs : System.nanoTime());
                                 }
@@ -1428,7 +1465,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     @Override
     public int submitDecodeUnit(byte[] decodeUnitData, int decodeUnitLength, int decodeUnitType,
                                 int frameNumber, int frameType, char frameHostProcessingLatency,
-                                long receiveTimeUs, long enqueueTimeUs) {
+                                long receiveTimeUs, long enqueueTimeUs,
+                                long hostPresentationTimeUs) { // CLUE: host capture time
         if (stopping) {
             // Don't bother if we're stopping
             return MoonBridge.DR_OK;
@@ -1816,6 +1854,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (clueTrace != null) {
             clueTrace.onDecodeInput(frameNumber, timestampUs, System.nanoTime());
         }
+        clueRememberHostTime(timestampUs, hostPresentationTimeUs); // CLUE
 
         if (!queueNextInputBuffer(timestampUs, codecFlags)) {
             return MoonBridge.DR_NEED_IDR;

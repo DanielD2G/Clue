@@ -93,6 +93,36 @@ public final class TraceWriter {
         }
     }
 
+    static final String PRESENTER_HEADER = "hostNs,outNs,targetNs";
+    static final String VSYNC_HEADER = "callbackNs,deadlineNs,expectedPresentNs,periodNs";
+
+    /** Writes presenter.csv and vsync.csv. Returns false (without throwing) on any failure. */
+    public static boolean writePresenter(PresenterTrace trace, File dir) {
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                return false;
+            }
+            final StringBuilder sb = new StringBuilder(trace.frameCount() * 40 + 64);
+            sb.append(PRESENTER_HEADER).append('\n');
+            trace.forEachFrame((host, out, target) ->
+                    sb.append(host).append(',').append(out).append(',').append(target).append('\n'));
+            try (Writer w = open(new File(dir, "presenter.csv"))) {
+                w.append(sb);
+            }
+            sb.setLength(0);
+            sb.append(VSYNC_HEADER).append('\n');
+            trace.forEachVsync((callback, deadline, present, period) ->
+                    sb.append(callback).append(',').append(deadline).append(',').append(present)
+                            .append(',').append(period).append('\n'));
+            try (Writer w = open(new File(dir, "vsync.csv"))) {
+                w.append(sb);
+            }
+            return true;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
     private static void writeSummary(FrameTrace frames, SessionCounters counters,
                                      Map<String, String> meta, File f) throws IOException {
         try (Writer w = open(f)) {

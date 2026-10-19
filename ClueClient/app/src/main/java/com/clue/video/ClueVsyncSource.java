@@ -54,6 +54,12 @@ public final class ClueVsyncSource implements Choreographer.VsyncCallback {
         Choreographer.FrameTimeline earliest = timelines.length > 0 ? timelines[0] : preferred;
         policy.onVsync(earliest.getDeadlineNanos(), earliest.getExpectedPresentationTimeNanos(), periodNs);
 
+        com.clue.trace.PresenterTrace trace = com.clue.trace.TraceSession.activePresenter();
+        if (trace != null) {
+            trace.onVsync(System.nanoTime(), earliest.getDeadlineNanos(),
+                    earliest.getExpectedPresentationTimeNanos(), periodNs);
+        }
+
         afterVsync.run();
         choreographer.postVsyncCallback(this);
     }
