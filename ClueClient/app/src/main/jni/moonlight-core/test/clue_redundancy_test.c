@@ -55,6 +55,37 @@ static void multipleControllersKeepIndependentState(void) {
     CHECK(!ClueRedundancyShouldResend(&pads[2], 6000));
 }
 
+static void nextCheckIsZeroWhenNoControllerIsActive(void) {
+    CLUE_PAD_STATE pads[4]; memset(pads, 0, sizeof(pads));
+    CHECK(ClueRedundancyNextCheckUs(pads, 4, 100000) == 0);         // nothing seen yet: block
+    ClueRedundancyOnState(&pads[1], 0x1000, 1000);
+    ClueRedundancyOnSent(&pads[1], 1000);
+    CHECK(ClueRedundancyNextCheckUs(pads, 4, 1000 + 500000) == 0);  // idle 500 ms: block again
+}
+
+static void nextCheckIsDueOneIntervalAfterTheLastSend(void) {
+    CLUE_PAD_STATE pads[2]; memset(pads, 0, sizeof(pads));
+    ClueRedundancyOnState(&pads[0], 0x1000, 1000);
+    ClueRedundancyOnSent(&pads[0], 1000);
+    CHECK(ClueRedundancyNextCheckUs(pads, 2, 2000) == 5000);
+}
+
+static void nextCheckPicksTheEarliestController(void) {
+    CLUE_PAD_STATE pads[3]; memset(pads, 0, sizeof(pads));
+    ClueRedundancyOnState(&pads[0], 0x1000, 1000);
+    ClueRedundancyOnSent(&pads[0], 2000);
+    ClueRedundancyOnState(&pads[2], 0x0000, 1000);
+    ClueRedundancyOnSent(&pads[2], 1500);
+    CHECK(ClueRedundancyNextCheckUs(pads, 3, 2000) == 5500);
+}
+
+static void nextCheckIsNeverInThePast(void) {
+    // A new state is still queued (not sent yet): the input thread must not spin on a past deadline.
+    CLUE_PAD_STATE pads[1]; memset(pads, 0, sizeof(pads));
+    ClueRedundancyOnState(&pads[0], 0x1000, 10000);
+    CHECK(ClueRedundancyNextCheckUs(pads, 1, 10000) == 10000 + CLUE_MIN_WAKE_US);
+}
+
 int main(void) {
     buttonChangeSendsTwoCopies();
     axisOnlyChangeSendsOneCopy();
@@ -62,6 +93,10 @@ int main(void) {
     noResendAfter500msIdle();
     noResendBeforeAnyState();
     multipleControllersKeepIndependentState();
+    nextCheckIsZeroWhenNoControllerIsActive();
+    nextCheckIsDueOneIntervalAfterTheLastSend();
+    nextCheckPicksTheEarliestController();
+    nextCheckIsNeverInThePast();
     printf(failures ? "NATIVE TESTS FAILED (%d)\n" : "NATIVE TESTS OK\n", failures);
     return failures ? 1 : 0;
 }

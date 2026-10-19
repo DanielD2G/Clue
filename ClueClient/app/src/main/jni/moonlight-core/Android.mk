@@ -11,6 +11,7 @@ LOCAL_MODULE    := moonlight-core
 LOCAL_SRC_FILES := clue_input_trace.c \
                    moonlight-common-c/src/AudioStream.c \
                    moonlight-common-c/src/ByteBuffer.c \
+                   moonlight-common-c/src/ClueRedundancy.c \
                    moonlight-common-c/src/Connection.c \
                    moonlight-common-c/src/ConnectionTester.c \
                    moonlight-common-c/src/ControlStream.c \
