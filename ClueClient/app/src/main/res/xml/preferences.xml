@@ -287,6 +287,11 @@
     <!-- CLUE: attribution required by GPL-3.0 and by the fork rules -->
     <PreferenceCategory android:title="Clue"
         android:key="category_clue_about">
+        <CheckBoxPreference
+            android:key="clue_trace_enabled"
+            android:title="Trazas de rendimiento de Clue"
+            android:summary="Registra la latencia de cada frame y cada entrada, y la exporta al terminar la sesión"
+            android:defaultValue="true" />
         <com.limelight.preferences.WebLauncherPreference
             android:key="clue_about"
             android:title="Acerca de Clue"

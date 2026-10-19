@@ -2556,7 +2556,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             clueMeta.put("bitrateKbps", String.valueOf(prefConfig.bitrate));
             clueMeta.put("framePacing", String.valueOf(prefConfig.framePacing));
             clueMeta.put("appVersion", com.limelight.BuildConfig.VERSION_NAME);
-            clueTraceSession = com.clue.trace.TraceSession.start(Game.this, clueMeta);
+            if (android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
+                    .getBoolean("clue_trace_enabled", true)) {
+                clueTraceSession = com.clue.trace.TraceSession.start(Game.this, clueMeta);
+            }
 
             conn.start(new AndroidAudioRenderer(Game.this, prefConfig.enableAudioFx),
                     decoderRenderer, Game.this);
