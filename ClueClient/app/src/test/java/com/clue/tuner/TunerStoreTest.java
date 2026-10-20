@@ -60,6 +60,13 @@ public class TunerStoreTest {
     }
 
     @Test
+    public void autoOfferOnlyOnWifi() {
+        assertTrue(TunerStore.autoOfferAllowed(TunerStore.TRANSPORT_WIFI));
+        assertFalse(TunerStore.autoOfferAllowed(TunerStore.TRANSPORT_WIRED));
+        assertFalse(TunerStore.autoOfferAllowed(TunerStore.TRANSPORT_OTHER));
+    }
+
+    @Test
     public void unquotedSsidIsQuoted() {
         assertEquals("\"home\"", TunerStore.networkKeyFrom(TunerStore.TRANSPORT_WIFI, "home"));
     }

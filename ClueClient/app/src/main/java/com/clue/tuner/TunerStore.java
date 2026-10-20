@@ -72,6 +72,46 @@ public final class TunerStore {
         return prefs.getString(LAST_PC, null);
     }
 
+    /** The automatic offer streams incompressible noise for minutes: Wi-Fi only (spec), never mobile data. */
+    public static boolean autoOfferAllowed(int transport) {
+        return transport == TRANSPORT_WIFI;
+    }
+
+    /** TRANSPORT_WIFI, TRANSPORT_WIRED or TRANSPORT_OTHER for the active network. */
+    @SuppressWarnings("deprecation")
+    public static int activeTransport(Context context) {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) {
+                return TRANSPORT_OTHER;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
+                if (caps != null) {
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                        return TRANSPORT_WIRED;
+                    }
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                        return TRANSPORT_WIFI;
+                    }
+                }
+            }
+            else {
+                NetworkInfo ni = cm.getActiveNetworkInfo();
+                if (ni != null) {
+                    if (ni.getType() == ConnectivityManager.TYPE_ETHERNET) {
+                        return TRANSPORT_WIRED;
+                    }
+                    if (ni.getType() == ConnectivityManager.TYPE_WIFI) {
+                        return TRANSPORT_WIFI;
+                    }
+                }
+            }
+        } catch (SecurityException | NullPointerException ignored) {
+        }
+        return TRANSPORT_OTHER;
+    }
+
     /** Pure mapping from the active transport and the raw SSID to the store's network key. */
     public static String networkKeyFrom(int transport, String ssid) {
         if (transport == TRANSPORT_WIRED) {
@@ -93,34 +133,9 @@ public final class TunerStore {
      */
     @SuppressWarnings("deprecation")
     public static String networkKey(Context context) {
-        int transport = TRANSPORT_OTHER;
+        int transport = activeTransport(context);
         String ssid = null;
         try {
-            ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (cm != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
-                    if (caps != null) {
-                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
-                            transport = TRANSPORT_WIRED;
-                        }
-                        else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                            transport = TRANSPORT_WIFI;
-                        }
-                    }
-                }
-                else {
-                    NetworkInfo ni = cm.getActiveNetworkInfo();
-                    if (ni != null) {
-                        if (ni.getType() == ConnectivityManager.TYPE_ETHERNET) {
-                            transport = TRANSPORT_WIRED;
-                        }
-                        else if (ni.getType() == ConnectivityManager.TYPE_WIFI) {
-                            transport = TRANSPORT_WIFI;
-                        }
-                    }
-                }
-            }
             if (transport == TRANSPORT_WIFI) {
                 WifiManager wm = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
                 WifiInfo info = wm != null ? wm.getConnectionInfo() : null;

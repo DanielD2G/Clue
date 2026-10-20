@@ -86,7 +86,9 @@ public final class BitrateSearch {
             return 0;
         }
         long kbps = (long) bestKbps * 85 / 100;
-        if (decoderMaxKbps > 0) {
+        // A declared ceiling under 5 Mbps is bogus (vendor capability tables vary): ignore it
+        // rather than recommend 0
+        if (decoderMaxKbps >= 5000) {
             kbps = Math.min(kbps, decoderMaxKbps);
         }
         return (int) (kbps / 5000 * 5000);

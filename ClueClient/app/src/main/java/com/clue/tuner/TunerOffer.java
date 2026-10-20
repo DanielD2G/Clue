@@ -33,8 +33,12 @@ public final class TunerOffer {
         final TunerStore store = new TunerStore(parent);
         store.setLastPc(computer.uuid);
 
+        // Wi-Fi only: never on mobile data (minutes of incompressible video) nor on Ethernet
+        if (!TunerStore.autoOfferAllowed(TunerStore.activeTransport(parent))) {
+            return false;
+        }
         final String network = TunerStore.networkKey(parent);
-        if (TunerStore.WIRED.equals(network) || !store.shouldOffer(computer.uuid, network)) {
+        if (!store.shouldOffer(computer.uuid, network)) {
             return false;
         }
 

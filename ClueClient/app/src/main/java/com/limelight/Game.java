@@ -279,6 +279,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         prefConfig.enablePip = false;
         prefConfig.enableBackMenu = false; // back cancels the whole test
         prefConfig.disableWarnings = true;
+        // Unattended run: keep the screen on while connecting too, not only once connected
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         // 1 RTT sample per 100 ms; frames sized for 240 fps
         int seconds = clueTuneMeasureMs / 1000 + 2;
         clueTuneCollector = new com.clue.tuner.StepCollector(seconds * 10, seconds * 240);
@@ -2876,6 +2878,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 }
             }
         });
+
+        // CLUE: tuner steps must not add "Clue Bitrate Test" to the launcher shortcuts
+        if (clueTuneKbps > 0) {
+            return;
+        }
 
         // Report this shortcut being used (off the main thread to prevent ANRs)
         ComputerDetails computer = new ComputerDetails();

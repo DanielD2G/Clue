@@ -69,4 +69,10 @@ public class BitrateSearchTest {
         assertEquals(0, BitrateSearch.suggest(0, 0));
         assertEquals(125000, BitrateSearch.suggest(150000, 0));
     }
+
+    @Test
+    public void suggestIgnoresBogusDecoderCeilingBelowFiveMbps() {
+        assertEquals(50000, BitrateSearch.suggest(61000, 4000));
+        assertEquals(15000, BitrateSearch.suggest(20000, 1));
+    }
 }

@@ -110,6 +110,8 @@ public class BitrateTunerActivity extends Activity {
         UiHelper.notifyNewRootView(this);
         ClueScreen.setupHeader(this, getString(R.string.tuner_title));
         ClueScreen.applyImmersive(this);
+        // The run takes minutes without touching the screen; a timeout between steps would stop it
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         status = findViewById(R.id.tuner_status);
         progress = findViewById(R.id.tuner_progress);
@@ -340,7 +342,7 @@ public class BitrateTunerActivity extends Activity {
 
         final int suggested = BitrateSearch.suggest(best, decoderMaxKbps);
         StringBuilder msg = new StringBuilder(getString(R.string.tuner_result_best, best / 1000));
-        if (decoderMaxKbps > 0 && (long) best * 85 / 100 > decoderMaxKbps) {
+        if (decoderMaxKbps >= 5000 && (long) best * 85 / 100 > decoderMaxKbps) { // same rule as suggest()
             msg.append('\n').append(getString(R.string.tuner_result_capped, decoderMaxKbps / 1000));
         }
         msg.append("\n\n").append(joinRows());
