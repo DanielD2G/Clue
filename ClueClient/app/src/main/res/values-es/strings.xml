@@ -402,4 +402,46 @@
     <string name="launcher_desktop">Escritorio</string>
     <string name="launcher_add_pc_help">Escribe la IP o el nombre del PC que ejecuta Sunshine, Apollo o Vibepollo.</string>
     <string name="launcher_add_pc_button">Añadir</string>
+
+    <!-- CLUE: autotuner de bitrate -->
+    <string name="tuner_title">Prueba de bitrate</string>
+    <string name="tuner_menu">Probar bitrate</string>
+    <string name="tuner_intro">Clue transmite desde el PC una imagen de ruido a bitrates cada vez más altos y se queda con el mayor que tu red y el decodificador sostienen estable. Deja la tablet donde sueles jugar.</string>
+    <string name="tuner_status_preparing">Preparando la prueba…</string>
+    <string name="tuner_status_step">Escalón %1$d · probando %2$d Mbps</string>
+    <string name="tuner_status_done">Prueba terminada</string>
+    <string name="tuner_status_cancelled">Prueba cancelada</string>
+    <string name="tuner_step_ok">%1$d Mbps · estable</string>
+    <string name="tuner_step_fail">%1$d Mbps · %2$s</string>
+    <string name="tuner_reason_interrupted">sesión interrumpida</string>
+    <string name="tuner_reason_no_frames">no llegó video</string>
+    <string name="tuner_reason_loss">cuadros perdidos %1$s</string>
+    <string name="tuner_reason_fps">los fps cayeron a %1$s</string>
+    <string name="tuner_reason_decode">decodificador lento (p95 %1$s)</string>
+    <string name="tuner_reason_unpresented">cuadros no mostrados %1$s</string>
+    <string name="tuner_reason_rtt">subió la latencia (p95 %1$s)</string>
+    <string name="tuner_pc_offline">El PC está apagado o no responde.</string>
+    <string name="tuner_no_app_title">Falta la app de prueba</string>
+    <string name="tuner_no_app_msg">El PC no tiene la app \"Clue Bitrate Test\". En el PC, ejecuta una vez tools\\host\\install-bitrate-test.ps1 del repositorio de Clue (pide permisos de administrador) y vuelve a correr la prueba.\n\nClue no sugiere un bitrate medido sobre contenido común: con el escritorio quieto el encoder casi no trabaja.</string>
+    <string name="tuner_other_app_title">Hay otra app abierta</string>
+    <string name="tuner_other_app_msg">%1$s está abierta en el PC. ¿La cierro y corro la prueba?</string>
+    <string name="tuner_other_app_quit">Cerrar y probar</string>
+    <string name="tuner_result_title">Recomendado: %1$d Mbps</string>
+    <string name="tuner_result_best">Mayor bitrate estable: %1$d Mbps. Clue deja un 15 %% de margen para los vaivenes del Wi-Fi.</string>
+    <string name="tuner_result_capped">Limitado por el máximo que declara el decodificador (%1$d Mbps).</string>
+    <string name="tuner_apply">Aplicar</string>
+    <string name="tuner_cancel">Cancelar</string>
+    <string name="tuner_applied">Bitrate fijado en %1$d Mbps</string>
+    <string name="tuner_fail_first_title">La red no alcanza</string>
+    <string name="tuner_fail_first_msg">Esta red no sostiene estable ni 20 Mbps. ¿Uso 10 Mbps?</string>
+    <string name="tuner_use_10">Usar 10 Mbps</string>
+    <string name="tuner_first_interrupted_title">No se pudo hacer la prueba</string>
+    <string name="tuner_first_interrupted_msg">La primera sesión de prueba terminó antes de medir nada. Revisa que el PC esté despierto y vuelve a intentarlo.</string>
+    <string name="tuner_offer_title">¿Buscar el mejor bitrate?</string>
+    <string name="tuner_offer_msg">Clue puede probar esta red (2–4 min) y sugerir el mayor bitrate que se mantiene fluido.</string>
+    <string name="tuner_offer_test">Probar</string>
+    <string name="tuner_offer_not_now">Ahora no</string>
+    <string name="tuner_settings_title">Probar bitrate</string>
+    <string name="tuner_settings_summary">Busca el mayor bitrate estable para el último PC usado en esta red</string>
+    <string name="tuner_settings_no_pc">Primero haz un stream a un PC</string>
 </resources>
