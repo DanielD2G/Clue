@@ -223,6 +223,49 @@
             android:key="checkbox_small_icon_mode"
             android:title="@string/title_checkbox_small_icon_mode"
             android:summary="@string/summary_checkbox_small_icon_mode" />
+        <!-- CLUE: game menu on back (Artemis) -->
+        <CheckBoxPreference
+            android:key="checkbox_enable_quit_dialog"
+            android:title="@string/title_quit_dialog"
+            android:summary="@string/summary_quit_dialog"
+            android:defaultValue="true" />
+    </PreferenceCategory>
+    <!-- CLUE: Apollo clipboard sync (Artemis' general settings) -->
+    <PreferenceCategory android:title="@string/category_general_settings"
+        android:key="category_general_settings">
+        <CheckBoxPreference
+            android:key="checkbox_smart_clipboard_sync"
+            android:title="@string/title_smart_clipboard_sync"
+            android:summary="@string/summary_smart_clipboard_sync"
+            android:defaultValue="false" />
+        <CheckBoxPreference
+            android:key="checkbox_smart_clipboard_sync_toast"
+            android:title="@string/title_smart_clipboard_sync_toast"
+            android:summary="@string/summary_smart_clipboard_sync_toast"
+            android:defaultValue="true" />
+        <CheckBoxPreference
+            android:key="checkbox_hide_clipboard_content"
+            android:title="@string/title_hide_clipboard_content"
+            android:summary="@string/summary_hide_clipboard_content"
+            android:defaultValue="true" />
+    </PreferenceCategory>
+    <!-- CLUE: game menu special keys (Artemis' special key layout, without the on-screen keys) -->
+    <PreferenceCategory android:title="@string/title_special_key_layout"
+        android:key="category_special_key_layout">
+        <CheckBoxPreference
+            android:key="checkbox_enable_clear_default_special_button"
+            android:title="@string/title_clear_default_special_button"
+            android:summary="@string/summary_clear_default_special_button"
+            android:defaultValue="false" />
+        <Preference
+            android:key="import_special_button_file"
+            android:title="@string/title_import_special_button"
+            android:summary="@string/summary_import_special_button" />
+        <com.limelight.preferences.WebLauncherPreference
+            android:key="option_help_custom_keys"
+            android:title="@string/title_special_key_help"
+            android:summary="@string/summary_special_key_help"
+            url="https://github.com/ClassicOldSong/moonlight-android/wiki/Custom-Special-Keys"/>
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/category_advanced_settings"
         android:key="category_advanced_settings">

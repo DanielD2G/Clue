@@ -2388,13 +2388,21 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
             break;
         case KeyEvent.KEYCODE_BUTTON_START:
         case KeyEvent.KEYCODE_MENU:
+            context.startUpTime = event.getEventTime(); // CLUE
             // Sometimes we'll get a spurious key up event on controller disconnect.
             // Make sure it's real by checking that the key is actually down before taking
             // any action.
+            // CLUE: tap + hold Start opens the game menu (Artemis); a plain long press still
+            // toggles mouse emulation.
             if ((context.inputMap & ControllerPacket.PLAY_FLAG) != 0 &&
-                    event.getEventTime() - context.startDownTime > ControllerHandler.START_DOWN_TIME_MOUSE_MODE_MS &&
-                    prefConfig.mouseEmulation) {
-                context.toggleMouseEmulation();
+                    com.clue.menu.ControllerMenuCombo.isLongPress(context.startUpTime, context.startDownTime,
+                            ControllerHandler.START_DOWN_TIME_MOUSE_MODE_MS)) {
+                if (prefConfig.enableBackMenu && context.backMenuPending) {
+                    context.backMenuPending = false;
+                    gestures.showGameMenu(context);
+                } else if (prefConfig.mouseEmulation) {
+                    context.toggleMouseEmulation();
+                }
             }
             context.inputMap &= ~ControllerPacket.PLAY_FLAG;
             break;
@@ -2609,6 +2617,9 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         case KeyEvent.KEYCODE_MENU:
             if (event.getRepeatCount() == 0) {
                 context.startDownTime = event.getEventTime();
+                // CLUE: a press right after a quick tap arms the game menu (Artemis)
+                context.backMenuPending = com.clue.menu.ControllerMenuCombo.isBackMenuPending(
+                        context.startDownTime, context.startUpTime);
             }
             context.inputMap |= ControllerPacket.PLAY_FLAG;
             break;
@@ -2888,7 +2899,7 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         usbDeviceContexts.put(controller.getControllerId(), context);
     }
 
-    class GenericControllerContext {
+    class GenericControllerContext implements GameInputDevice { // CLUE: + GameInputDevice (Artemis)
         public int id;
         public boolean external;
 
@@ -2940,6 +2951,17 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
                 mainThreadHandler.postDelayed(this, mouseEmulationReportPeriod);
             }
         };
+
+        // CLUE: device options in the game menu's advanced menu (Artemis)
+        @Override
+        public java.util.List<com.limelight.GameMenu.MenuOption> getGameMenuOptions() {
+            java.util.List<com.limelight.GameMenu.MenuOption> options = new java.util.ArrayList<>();
+            options.add(new com.limelight.GameMenu.MenuOption(activityContext.getString(mouseEmulationActive ?
+                    R.string.game_menu_toggle_mouse_off : R.string.game_menu_toggle_mouse_on),
+                    true, () -> toggleMouseEmulation()));
+
+            return options;
+        }
 
         public void toggleMouseEmulation() {
             mainThreadHandler.removeCallbacks(mouseEmulationRunnable);
@@ -3030,6 +3052,8 @@ public class ControllerHandler implements InputManager.InputDeviceListener, UsbD
         public long lastRbUpTime = 0;
 
         public long startDownTime = 0;
+        public long startUpTime = 0; // CLUE: game menu combo (Artemis)
+        public boolean backMenuPending = false; // CLUE
 
         public final Runnable batteryStateUpdateRunnable = new Runnable() {
             @Override

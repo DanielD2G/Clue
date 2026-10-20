@@ -118,6 +118,17 @@ public class VirtualController {
         buttonConfigure.setVisibility(View.VISIBLE);
     }
 
+    // CLUE: from Artemis, for the game menu's "Toggle On-screen controller"
+    public int switchShowHide() {
+        if (buttonConfigure.getVisibility() == View.VISIBLE) {
+            hide();
+            return 0;
+        } else {
+            show();
+            return 1;
+        }
+    }
+
     public void removeElements() {
         for (VirtualControllerElement element : elements) {
             frame_layout.removeView(element);

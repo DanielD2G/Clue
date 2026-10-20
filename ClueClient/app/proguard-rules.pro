@@ -3,6 +3,11 @@
 
 # Our code
 -keep class com.limelight.binding.input.evdev.* {*;}
+# CLUE: game menu custom shortcuts (Gson + VK_* lookup by reflection), as in Artemis
+-keep class com.limelight.utils.KeyMapper {*;}
+-keep class com.limelight.utils.KeyConfigHelper {*;}
+-keep class com.limelight.utils.KeyConfigHelper$ShortcutFile {*;}
+-keep class com.limelight.utils.KeyConfigHelper$Shortcut {*;}
 
 # Moonlight common
 -keep class com.limelight.nvstream.jni.* {*;}

@@ -667,6 +667,46 @@ public class StreamSettings extends Activity {
                     return true;
                 }
             });
+
+            // CLUE: import custom game menu shortcuts (Artemis)
+            Preference importSpecialKeys = findPreference("import_special_button_file");
+            if (importSpecialKeys != null) {
+                importSpecialKeys.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("application/json");
+                        startActivityForResult(intent, READ_REQUEST_SPECIAL_CODE);
+                        return false;
+                    }
+                });
+            }
+        }
+
+        // CLUE: from Artemis' StreamSettings
+        private static final int READ_REQUEST_SPECIAL_CODE = 1002;
+
+        @Override
+        public void onActivityResult(int requestCode, int resultCode, Intent data) {
+            super.onActivityResult(requestCode, resultCode, data);
+            if (requestCode == READ_REQUEST_SPECIAL_CODE && resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+                try {
+                    android.net.Uri uri = data.getData();
+                    String json = com.limelight.utils.FileUriUtils.openUriForRead(getActivity(), uri);
+                    if (android.text.TextUtils.isEmpty(json)) {
+                        android.widget.Toast.makeText(getActivity(), getString(R.string.pref_empty_file), android.widget.Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    SharedPreferences.Editor prefEditor = getActivity().getSharedPreferences(com.limelight.GameMenu.PREF_NAME, Activity.MODE_PRIVATE).edit();
+                    prefEditor.putString(com.limelight.GameMenu.KEY_NAME, json);
+                    prefEditor.apply();
+                    android.widget.Toast.makeText(getActivity(), getString(R.string.pref_import_success), android.widget.Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    android.widget.Toast.makeText(getActivity(), getString(R.string.pref_error_occurred) + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
         }
     }
 }
