@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: primary button (white pill; a ring when focused by the controller) -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle">
+            <corners android:radius="30dp" />
+            <solid android:color="#66FFFFFF" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="30dp" />
+            <solid android:color="#CCFFFFFF" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="30dp" />
+                    <solid android:color="@color/clue_accent" />
+                </shape>
+            </item>
+            <item android:left="3dp" android:top="3dp" android:right="3dp" android:bottom="3dp">
+                <shape android:shape="rectangle">
+                    <corners android:radius="27dp" />
+                    <solid android:color="#FFFFFFFF" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="30dp" />
+            <solid android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+</selector>

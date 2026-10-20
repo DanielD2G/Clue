@@ -20,6 +20,19 @@
         <!-- All customizations that are NOT specific to a particular API-level can go here. -->
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <!-- CLUE: console launcher look everywhere (see clue_theme.xml) -->
+        <item name="android:windowBackground">@drawable/launcher_bg_default</item>
+        <item name="android:colorBackground">@color/clue_launcher_bg</item>
+        <item name="android:colorPrimary">@color/clue_launcher_bg</item>
+        <item name="android:colorPrimaryDark">@color/clue_launcher_bg</item>
+        <item name="android:colorAccent">@color/clue_accent</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="android:alertDialogTheme">@style/ClueDialog</item>
+        <item name="android:preferenceStyle">@style/CluePreference</item>
+        <item name="android:preferenceCategoryStyle">@style/CluePreference.Category</item>
+        <item name="android:checkBoxPreferenceStyle">@style/CluePreference.CheckBox</item>
+        <item name="android:dialogPreferenceStyle">@style/CluePreference.Dialog</item>
+        <item name="android:preferenceScreenStyle">@style/CluePreference.Screen</item>
     </style>
 
     <style name="StreamBaseTheme" parent="AppBaseTheme">
@@ -32,6 +45,9 @@
         <!-- All customizations that are NOT specific to a particular API-level can go here. -->
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
+        <!-- CLUE: in-stream menus and dialogs share the app look -->
+        <item name="android:colorAccent">@color/clue_accent</item>
+        <item name="android:alertDialogTheme">@style/ClueDialog</item>
     </style>
 
 </resources>

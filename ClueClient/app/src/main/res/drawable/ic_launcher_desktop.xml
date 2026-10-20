@@ -1,0 +1,30 @@
+<!-- CLUE: desktop glyph for the launcher's Desktop cover -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Bezel -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,3.5h18a2,2 0,0 1,2 2v10a2,2 0,0 1,-2 2H3a2,2 0,0 1,-2 -2v-10a2,2 0,0 1,2 -2z" />
+    <!-- Screen -->
+    <path
+        android:fillColor="#FF1E2A52"
+        android:pathData="M2.6,5.1h18.8v10.3H2.6z" />
+    <!-- Windows -->
+    <path
+        android:fillColor="#F2FFFFFF"
+        android:pathData="M4.4,6.8h8.2v5.6H4.4z" />
+    <path
+        android:fillColor="#99FFFFFF"
+        android:pathData="M13.8,6.8h5.8v2.5h-5.8zM13.8,10.2h5.8v2.2h-5.8z" />
+    <!-- Taskbar -->
+    <path
+        android:fillColor="#80FFFFFF"
+        android:pathData="M2.6,13.7h18.8v1.7H2.6z" />
+    <!-- Stand -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.5,17.5h5l0.6,2.2h1.6v1.3H7.3v-1.3h1.6z" />
+</vector>

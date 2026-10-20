@@ -274,6 +274,10 @@ public class AddComputerManually extends Activity {
 
         UiHelper.notifyNewRootView(this);
 
+        // CLUE: console-style header
+        com.limelight.ui.ClueScreen.setupHeader(this, getString(R.string.launcher_add_pc));
+        com.limelight.ui.ClueScreen.applyImmersive(this);
+
         this.hostText = findViewById(R.id.hostTextView);
         hostText.setImeOptions(EditorInfo.IME_ACTION_DONE);
         hostText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -306,6 +310,15 @@ public class AddComputerManually extends Activity {
         // Bind to the ComputerManager service
         bindService(new Intent(AddComputerManually.this,
                     ComputerManagerService.class), serviceConnection, Service.BIND_AUTO_CREATE);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // CLUE: full-screen like the launcher
+        if (hasFocus) {
+            com.limelight.ui.ClueScreen.applyImmersive(this);
+        }
     }
 
     // Returns true if the event should be eaten

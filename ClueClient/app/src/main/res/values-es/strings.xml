@@ -399,4 +399,7 @@
     <string name="launcher_search_hint">Nombre del juego</string>
     <string name="launcher_search_clear">Borrar</string>
     <string name="launcher_select_paired_pc">Primero elige un equipo vinculado y en línea</string>
+    <string name="launcher_desktop">Escritorio</string>
+    <string name="launcher_add_pc_help">Escribe la IP o el nombre del PC que ejecuta Sunshine, Apollo o Vibepollo.</string>
+    <string name="launcher_add_pc_button">Añadir</string>
 </resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: settings list selector, drawn on top of the row cards so the controller focus is obvious -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:exitFadeDuration="@android:integer/config_shortAnimTime">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <solid android:color="#1FFFFFFF" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <solid android:color="#14FFFFFF" />
+            <stroke android:width="2dp" android:color="#E6FFFFFF" />
+        </shape>
+    </item>
+    <item>
+        <color android:color="#00000000" />
+    </item>
+</selector>

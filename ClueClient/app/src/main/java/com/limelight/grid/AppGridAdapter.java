@@ -2,6 +2,7 @@ package com.limelight.grid;
 
 import android.content.Context;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.BitmapDrawable;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -14,6 +15,7 @@ import com.limelight.grid.assets.CachedAppAssetLoader;
 import com.limelight.grid.assets.DiskAssetLoader;
 import com.limelight.grid.assets.MemoryAssetLoader;
 import com.limelight.grid.assets.NetworkAssetLoader;
+import com.limelight.ui.DesktopCover;
 import com.limelight.nvstream.http.ComputerDetails;
 import com.limelight.preferences.PreferenceConfiguration;
 
@@ -157,6 +159,11 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
         Collections.sort(list, new Comparator<AppView.AppObject>() {
             @Override
             public int compare(AppView.AppObject lhs, AppView.AppObject rhs) {
+                // CLUE: the host desktop always comes first
+                boolean lhsDesktop = DesktopCover.isDesktop(lhs.app);
+                if (lhsDesktop != DesktopCover.isDesktop(rhs.app)) {
+                    return lhsDesktop ? -1 : 1;
+                }
                 return lhs.app.getAppName().toLowerCase().compareTo(rhs.app.getAppName().toLowerCase());
             }
         });
@@ -194,8 +201,18 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
 
     @Override
     public void populateView(View parentView, ImageView imgView, ProgressBar prgView, TextView txtView, ImageView overlayView, AppView.AppObject obj) {
-        // Let the cached asset loader handle it
-        loader.populateImageView(obj.app, imgView, txtView);
+        if (DesktopCover.isDesktop(obj.app)) {
+            // CLUE: our own Desktop cover. Replacing the drawable also detaches any pending
+            // load for a recycled view, since the loader checks its AsyncDrawable is still there.
+            imgView.clearAnimation();
+            imgView.setVisibility(View.VISIBLE);
+            imgView.setImageDrawable(new BitmapDrawable(context.getResources(), DesktopCover.get(context)));
+            txtView.setVisibility(View.GONE);
+        }
+        else {
+            // Let the cached asset loader handle it
+            loader.populateImageView(obj.app, imgView, txtView);
+        }
 
         if (obj.isRunning) {
             // Show the play button overlay

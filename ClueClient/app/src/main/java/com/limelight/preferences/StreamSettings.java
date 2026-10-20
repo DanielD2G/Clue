@@ -26,6 +26,14 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.view.KeyEvent;
+import android.widget.AbsListView;
+import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.TextView;
+import java.util.ArrayList;
 
 import com.limelight.LimeLog;
 import com.limelight.PcView;
@@ -33,6 +41,7 @@ import com.limelight.R;
 import com.limelight.binding.video.MediaCodecHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.UiHelper;
+import com.limelight.ui.ClueScreen;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -65,6 +74,10 @@ public class StreamSettings extends Activity {
         setContentView(R.layout.activity_stream_settings);
 
         UiHelper.notifyNewRootView(this);
+
+        // CLUE: console-style header
+        ClueScreen.setupHeader(this, getString(R.string.launcher_tab_settings));
+        ClueScreen.applyImmersive(this);
     }
 
     @Override
@@ -118,6 +131,121 @@ public class StreamSettings extends Activity {
                 intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(intent, null);
             }
+        }
+    }
+
+    // CLUE: console-style category column. Each entry jumps to its section; the entry of the
+    // section on screen stays highlighted, and L1/R1 move between sections.
+    private final ArrayList<TextView> navEntries = new ArrayList<>();
+    private final ArrayList<PreferenceCategory> navCategories = new ArrayList<>();
+    private ListView navList;
+
+    void buildCategoryNav(PreferenceScreen screen, final ListView list) {
+        ViewGroup nav = findViewById(R.id.settings_nav);
+        nav.removeAllViews();
+        navEntries.clear();
+        navCategories.clear();
+        navList = list;
+
+        LayoutInflater inflater = getLayoutInflater();
+        for (int i = 0; i < screen.getPreferenceCount(); i++) {
+            Preference pref = screen.getPreference(i);
+            if (!(pref instanceof PreferenceCategory) || pref.getTitle() == null) {
+                continue;
+            }
+            final int index = navCategories.size();
+            TextView entry = (TextView) inflater.inflate(R.layout.clue_settings_nav_item, nav, false);
+            entry.setText(pref.getTitle());
+            entry.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    jumpToCategory(index);
+                }
+            });
+            // Moving right goes into the rows
+            entry.setNextFocusRightId(android.R.id.list);
+            nav.addView(entry);
+            navEntries.add(entry);
+            navCategories.add((PreferenceCategory) pref);
+        }
+
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(AbsListView view, int scrollState) {}
+
+            @Override
+            public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount, int totalItemCount) {
+                highlightCategory(categoryAt(firstVisibleItem));
+            }
+        });
+        highlightCategory(0);
+    }
+
+    private int positionOf(PreferenceCategory category) {
+        ListAdapter adapter = navList.getAdapter();
+        for (int i = 0; adapter != null && i < adapter.getCount(); i++) {
+            if (adapter.getItem(i) == category) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private int categoryAt(int position) {
+        ListAdapter adapter = navList.getAdapter();
+        if (adapter == null) {
+            return 0;
+        }
+        for (int i = Math.min(position, adapter.getCount() - 1); i >= 0; i--) {
+            int index = navCategories.indexOf(adapter.getItem(i));
+            if (index >= 0) {
+                return index;
+            }
+        }
+        return 0;
+    }
+
+    private void highlightCategory(int index) {
+        for (int i = 0; i < navEntries.size(); i++) {
+            navEntries.get(i).setSelected(i == index);
+        }
+    }
+
+    private void jumpToCategory(int index) {
+        if (navList == null || index < 0 || index >= navCategories.size()) {
+            return;
+        }
+        int position = positionOf(navCategories.get(index));
+        if (position >= 0) {
+            navList.setSelectionFromTop(position, 0);
+            highlightCategory(index);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // CLUE: shoulder buttons jump between settings sections
+        int code = event.getKeyCode();
+        if ((code == KeyEvent.KEYCODE_BUTTON_L1 || code == KeyEvent.KEYCODE_BUTTON_R1) && navList != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                int current = categoryAt(navList.getFirstVisiblePosition());
+                int target = current + (code == KeyEvent.KEYCODE_BUTTON_R1 ? 1 : -1);
+                if (target >= 0 && target < navEntries.size()) {
+                    jumpToCategory(target);
+                    navEntries.get(target).requestFocus();
+                }
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // CLUE: full-screen like the launcher
+        if (hasFocus) {
+            ClueScreen.applyImmersive(this);
         }
     }
 
@@ -267,7 +395,33 @@ public class StreamSettings extends Activity {
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View view = super.onCreateView(inflater, container, savedInstanceState);
             UiHelper.applyStatusBarPadding(view);
+            // CLUE: rows are cards with gaps; the focus ring is drawn on top of them
+            ListView list = view.findViewById(android.R.id.list);
+            if (list != null) {
+                float density = getResources().getDisplayMetrics().density;
+                list.setDivider(new ColorDrawable(Color.TRANSPARENT));
+                list.setDividerHeight(Math.round(8 * density));
+                list.setSelector(R.drawable.clue_pref_selector);
+                list.setDrawSelectorOnTop(true);
+                list.setPadding(Math.round(16 * density), 0, Math.round(48 * density), Math.round(48 * density));
+                list.setClipToPadding(false);
+                list.setScrollBarStyle(View.SCROLLBARS_OUTSIDE_OVERLAY);
+            }
             return view;
+        }
+
+        @Override
+        public void onActivityCreated(Bundle savedInstanceState) {
+            super.onActivityCreated(savedInstanceState);
+            // CLUE: category column, built from the final preference tree
+            View view = getView();
+            ListView list = view != null ? view.findViewById(android.R.id.list) : null;
+            if (list != null && getActivity() instanceof StreamSettings) {
+                ((StreamSettings) getActivity()).buildCategoryNav(getPreferenceScreen(), list);
+                // PreferenceFragment applies its own divider after onCreateView()
+                list.setDivider(new ColorDrawable(Color.TRANSPARENT));
+                list.setDividerHeight(Math.round(8 * getResources().getDisplayMetrics().density));
+            }
         }
 
         @Override

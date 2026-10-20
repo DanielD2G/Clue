@@ -418,4 +418,7 @@
     <string name="launcher_search_hint">Game name</string>
     <string name="launcher_search_clear">Clear</string>
     <string name="launcher_select_paired_pc">Pick a paired PC that is online first</string>
+    <string name="launcher_desktop">Desktop</string>
+    <string name="launcher_add_pc_help">Type the IP address or host name of the PC running Sunshine, Apollo or Vibepollo.</string>
+    <string name="launcher_add_pc_button">Add</string>
 </resources>

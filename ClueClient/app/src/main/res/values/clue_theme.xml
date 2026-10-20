@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: app-wide look (dialogs, menus, settings, forms) matching the console launcher -->
+<resources>
+    <color name="clue_accent">#FF7CC4FF</color>
+    <color name="clue_surface">#FF151C27</color>
+    <color name="clue_surface_row">#14FFFFFF</color>
+    <color name="clue_divider">#1FFFFFFF</color>
+
+    <!-- Dialogs, context menus, progress dialogs and the in-stream game menu -->
+    <style name="ClueDialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/clue_dialog_bg</item>
+        <item name="android:colorBackground">@color/clue_surface</item>
+        <item name="android:colorAccent">@color/clue_accent</item>
+        <item name="android:colorControlActivated">@color/clue_accent</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="android:textColorPrimary">@color/clue_launcher_text</item>
+        <item name="android:textColorSecondary">@color/clue_launcher_text_dim</item>
+        <item name="android:textColorAlertDialogListItem">@color/clue_launcher_text</item>
+        <item name="android:windowTitleStyle">@style/ClueDialog.Title</item>
+        <item name="android:buttonBarButtonStyle">@style/ClueDialog.Button</item>
+        <item name="android:windowMinWidthMajor">42%</item>
+        <item name="android:windowMinWidthMinor">80%</item>
+        <item name="android:backgroundDimAmount">0.65</item>
+    </style>
+
+    <style name="ClueDialog.Title">
+        <item name="android:textAppearance">@style/ClueDialog.TitleText</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <style name="ClueDialog.TitleText" parent="android:TextAppearance.Material.DialogWindowTitle">
+        <item name="android:textColor">@color/clue_launcher_text</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="ClueDialog.Button" parent="android:Widget.Material.Button.Borderless.Colored">
+        <item name="android:textColor">@color/clue_accent</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:background">@drawable/launcher_pill</item>
+    </style>
+
+    <!-- Settings rows -->
+    <style name="CluePreference">
+        <item name="android:layout">@layout/clue_preference</item>
+    </style>
+
+    <style name="CluePreference.Category">
+        <item name="android:layout">@layout/clue_preference_category</item>
+    </style>
+
+    <style name="CluePreference.CheckBox">
+        <item name="android:layout">@layout/clue_preference</item>
+        <item name="android:widgetLayout">@layout/clue_preference_switch</item>
+    </style>
+
+    <style name="CluePreference.Dialog">
+        <item name="android:layout">@layout/clue_preference</item>
+        <item name="android:positiveButtonText">@android:string/ok</item>
+        <item name="android:negativeButtonText">@android:string/cancel</item>
+    </style>
+
+    <style name="CluePreference.Screen">
+        <item name="android:layout">@layout/clue_preference</item>
+    </style>
+
+    <style name="ClueSettingsNav">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+        <item name="android:layout_marginBottom">4dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">@color/clue_settings_nav_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:background">@drawable/clue_settings_nav</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <style name="ClueTextField">
+        <item name="android:background">@drawable/clue_field_bg</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:minHeight">60dp</item>
+        <item name="android:textColor">@color/clue_launcher_text</item>
+        <item name="android:textColorHint">#66FFFFFF</item>
+        <item name="android:textSize">20sp</item>
+    </style>
+
+    <style name="CluePrimaryButton">
+        <item name="android:background">@drawable/clue_button_primary</item>
+        <item name="android:minHeight">60dp</item>
+        <item name="android:minWidth">140dp</item>
+        <item name="android:paddingStart">28dp</item>
+        <item name="android:paddingEnd">28dp</item>
+        <item name="android:textColor">@color/clue_launcher_bg</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+</resources>

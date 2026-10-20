@@ -17,6 +17,7 @@ import com.limelight.ui.AdapterFragment;
 import com.limelight.ui.AdapterFragmentCallbacks;
 import com.limelight.ui.CoverCarousel;
 import com.limelight.ui.LauncherUi;
+import com.limelight.ui.DesktopCover;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ServerHelper;
@@ -399,7 +400,7 @@ public class AppView extends Activity { // CLUE: the launcher carousel replaces 
         AdapterContextMenuInfo info = (AdapterContextMenuInfo) menuInfo;
         AppObject selectedApp = (AppObject) appGridAdapter.getItem(info.position);
 
-        menu.setHeaderTitle(selectedApp.app.getAppName());
+        menu.setHeaderTitle(DesktopCover.isDesktop(selectedApp.app) ? getString(R.string.launcher_desktop) : selectedApp.app.getAppName()); // CLUE
 
         if (lastRunningAppId != 0) {
             if (lastRunningAppId == selectedApp.app.getAppId()) {
@@ -627,6 +628,11 @@ public class AppView extends Activity { // CLUE: the launcher carousel replaces 
             @Override
             public void onTabRequested(int tab) {
                 if (tab == LauncherUi.TAB_COMPUTERS) {
+                    if (isTaskRoot()) {
+                        // Opened from a launcher shortcut: there is no PC list underneath
+                        startActivity(new Intent(AppView.this, PcView.class)
+                                .putExtra(PcView.NO_AUTO_OPEN_EXTRA, true));
+                    }
                     finish();
                 }
             }
@@ -723,7 +729,7 @@ public class AppView extends Activity { // CLUE: the launcher carousel replaces 
         else if (app.isHidden) {
             chip = getString(R.string.launcher_chip_hidden);
         }
-        launcherUi.setInfo(app.app.getAppName(), chip, chipIcon);
+        launcherUi.setInfo(DesktopCover.isDesktop(app.app) ? getString(R.string.launcher_desktop) : app.app.getAppName(), chip, chipIcon);
 
         int action;
         if (app.isRunning) {

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: top bar for secondary screens (settings, add PC): back, title, B hint -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/clue_launcher_bar_height"
+    android:layout_marginTop="8dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="36dp"
+    android:paddingEnd="36dp">
+
+    <ImageButton
+        android:id="@+id/screen_back"
+        style="@style/ClueLauncherAction"
+        android:layout_marginStart="0dp"
+        android:src="@drawable/ic_launcher_back"
+        android:contentDescription="@string/launcher_hint_back" />
+
+    <TextView
+        android:id="@+id/screen_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textColor="@color/clue_launcher_text"
+        android:textSize="26sp"
+        android:fontFamily="sans-serif-medium" />
+
+    <LinearLayout android:id="@+id/screen_hint_b" style="@style/ClueLauncherHint">
+        <TextView style="@style/ClueLauncherHintButton" android:text="B" />
+        <TextView style="@style/ClueLauncherHintLabel" android:text="@string/launcher_hint_back" />
+    </LinearLayout>
+</LinearLayout>
