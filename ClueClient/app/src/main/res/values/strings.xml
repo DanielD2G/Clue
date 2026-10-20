@@ -199,6 +199,21 @@
     <string name="summary_checkbox_touchscreen_trackpad">If enabled, the touchscreen acts like a trackpad. If disabled, the touchscreen directly controls the mouse cursor.</string>
     <string name="title_checkbox_absolute_mouse_mode">Remote desktop mouse mode</string>
     <string name="summary_checkbox_absolute_mouse_mode">This can make mouse acceleration behave more naturally for remote desktop usage, but it is incompatible with many games.</string>
+    <!-- CLUE: Artemis touchscreen modes -->
+    <string name="title_touchscreen_mode">Touchscreen Mode</string>
+    <string name="summary_touchscreen_mode">Select between MultiTouch/SingleTouch/Trackpad/Disabled mode.\nPen/Stylus are still usable when Disabled is selected.</string>
+    <string name="title_checkbox_remember_mouse_mode">Remember mouse mode</string>
+    <string name="summary_checkbox_remember_mouse_mode">Remember mouse mode selected during stream. When disabled, mouse mode changed during stream will be temporary.</string>
+    <string name="title_checkbox_multi_touch_gestures">Enable multi-touch gestures</string>
+    <string name="summary_checkbox_multi_touch_gestures">Enable 3 finger tap for keyboard, 4 finger tap for full keyboard, 5 finger tap for quick menu when using multi-touch mode.</string>
+    <string name="mouse_mode_multi_touch">Multi touch</string>
+    <string name="mouse_mode_absolute_touch">Absolute touch</string>
+    <string name="mouse_mode_track_pad_natural">Track pad(Natural/Double tap to drag)</string>
+    <string name="mouse_mode_track_pad_gaming">Track pad(Gaming/Long press to drag)</string>
+    <string name="mouse_mode_disabled">Disabled</string>
+    <string name="mouse_mode_absolute_touch_swapped">Absolute touch (left/right click swapped)</string>
+    <string name="game_menu_select_mouse_mode">Select Mouse mode</string>
+    <string name="toggle_local_mouse_cursor">Toggle local mouse cursor(physical mouse needed)</string>
     <string name="title_checkbox_mouse_nav_buttons">Enable back and forward mouse buttons</string>
     <string name="summary_checkbox_mouse_nav_buttons">Enabling this option may break right clicking on some buggy devices</string>
 

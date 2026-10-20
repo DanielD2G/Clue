@@ -12,6 +12,8 @@ import com.limelight.binding.input.touch.RelativeTouchContext;
 import com.limelight.binding.input.driver.UsbDriverService;
 import com.limelight.binding.input.evdev.EvdevListener;
 import com.limelight.binding.input.touch.TouchContext;
+import com.limelight.binding.input.touch.TrackpadContext; // CLUE
+import com.limelight.utils.MouseModeOption; // CLUE
 import com.limelight.binding.input.virtual_controller.VirtualController;
 import com.limelight.binding.video.CrashListener;
 import com.limelight.binding.video.MediaCodecDecoderRenderer;
@@ -40,6 +42,7 @@ import com.limelight.utils.UiHelper;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.AlertDialog; // CLUE
 import android.app.PictureInPictureParams;
 import android.app.Service;
 import android.content.ComponentName;
@@ -85,6 +88,8 @@ import java.lang.reflect.Method;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList; // CLUE
+import java.util.List; // CLUE
 import java.util.Locale;
 
 
@@ -97,6 +102,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     // Only 2 touches are supported
     private final TouchContext[] touchContextMap = new TouchContext[2];
     private long threeFingerDownTime = 0;
+    // CLUE: Artemis 4/5-finger taps
+    private long fourFingerDownTime = 0;
+    private long fiveFingerDownTime = 0;
+    // CLUE: Artemis lets the game menu switch the touchscreen mode
+    public boolean allowChangeMouseMode = true;
 
     private static final int REFERENCE_HORIZ_RES = 1280;
     private static final int REFERENCE_VERT_RES = 720;
@@ -108,6 +118,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private static final int STYLUS_UP_DEAD_ZONE_RADIUS = 50;
 
     private static final int THREE_FINGER_TAP_THRESHOLD = 300;
+    private static final int FOUR_FINGER_TAP_THRESHOLD = 300; // CLUE
+    private static final int FIVE_FINGER_TAP_THRESHOLD = 300; // CLUE
 
     private ControllerHandler controllerHandler;
     private KeyboardTranslator keyboardTranslator;
@@ -527,17 +539,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
 
-        // Initialize touch contexts
-        for (int i = 0; i < touchContextMap.length; i++) {
-            if (!prefConfig.touchscreenTrackpad) {
-                touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamView);
-            }
-            else {
-                touchContextMap[i] = new RelativeTouchContext(conn, i,
-                        REFERENCE_HORIZ_RES, REFERENCE_VERT_RES,
-                        streamView, prefConfig);
-            }
-        }
+        // CLUE: initialize touch contexts from the Artemis touchscreen mode
+        // The mouse mode preference is also read in PreferenceConfiguration to set the boolean flags
+        initMouseMode();
 
         if (prefConfig.onscreenController) {
             // create virtual onscreen controller
@@ -2060,6 +2064,36 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     return true;
                 }
 
+                // CLUE: Artemis touchscreen modes (Game.handleMotionEvent, finger case)
+                // The "Disabled" mode has no touch contexts
+                if (touchContextMap[0] == null) {
+                    return true;
+                }
+
+                if (prefConfig.enableMultiTouchGestures || !prefConfig.enableMultiTouchScreen) {
+                    int pointerCount = event.getPointerCount();
+                    if (pointerCount > 2) {
+                        int eventAction = event.getActionMasked();
+                        if (
+                                (
+                                        eventAction == MotionEvent.ACTION_POINTER_DOWN
+                                                || eventAction == MotionEvent.ACTION_POINTER_UP
+                                                || eventAction == MotionEvent.ACTION_UP
+                                )
+                                        && handleMultiTouchGesture(event, eventAction, pointerCount, view)
+                        ) {
+                            return true;
+                        }
+                    }
+                }
+
+                if (prefConfig.enableMultiTouchScreen && !prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
+                    // If this host supports touch events and absolute touch is enabled,
+                    // send it directly as a touch event.
+                    return true;
+                }
+                // CLUE: end of Artemis touchscreen modes
+
                 // If this is the parent view, we'll offset our coordinates to appear as if they
                 // are relative to the StreamView like our StreamView touch events are.
                 float xOffset, yOffset;
@@ -2077,29 +2111,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 int eventX = (int)(event.getX(actionIndex) + xOffset);
                 int eventY = (int)(event.getY(actionIndex) + yOffset);
 
-                // Special handling for 3 finger gesture
-                if (event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN &&
-                        event.getPointerCount() == 3) {
-                    // Three fingers down
-                    threeFingerDownTime = event.getEventTime();
-
-                    // Cancel the first and second touches to avoid
-                    // erroneous events
-                    for (TouchContext aTouchContext : touchContextMap) {
-                        aTouchContext.cancelTouch();
-                    }
-
-                    return true;
-                }
-
-                // TODO: Re-enable native touch when have a better solution for handling
-                // cancelled touches from Android gestures and 3 finger taps to activate
-                // the software keyboard.
-                /*if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
-                    // If this host supports touch events and absolute touch is enabled,
-                    // send it directly as a touch event.
-                    return true;
-                }*/
+                // CLUE: upstream's 3-finger special case and the disabled native touch call are
+                // replaced by Artemis's handleMultiTouchGesture() and trySendTouchEvent() above.
 
                 TouchContext context = getTouchContext(actionIndex);
                 if (context == null) {
@@ -2117,13 +2130,24 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     break;
                 case MotionEvent.ACTION_POINTER_UP:
                 case MotionEvent.ACTION_UP:
-                    if (event.getPointerCount() == 1 &&
-                            (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || (event.getFlags() & MotionEvent.FLAG_CANCELED) == 0)) {
-                        // All fingers up
-                        if (event.getEventTime() - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
-                            // This is a 3 finger tap to bring up the keyboard
-                            toggleKeyboard();
-                            return true;
+                    // CLUE: Artemis only checks the multi-finger taps here in trackpad modes
+                    if (prefConfig.touchscreenTrackpad) {
+                        if (event.getPointerCount() == 1 &&
+                                (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || (event.getFlags() & MotionEvent.FLAG_CANCELED) == 0)) {
+                            // All fingers up
+                            long currentEventTime = event.getEventTime();
+                            if (currentEventTime - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
+                                // This is a 3 finger tap to bring up the keyboard
+                                toggleKeyboard();
+                                return true;
+                            } else if (currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
+                                // CLUE: TODO call Artemis Game.toggleFullKeyboard() once the full keyboard is ported
+                                return true;
+                            } else if (currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
+                                // CLUE: TODO call Artemis Game.showGameMenu(null), gated by
+                                // prefConfig.enableBackMenu, once the game menu is ported
+                                return true;
+                            }
                         }
                     }
 
@@ -2190,6 +2214,171 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Unknown class
         return false;
+    }
+
+    // CLUE: ported from Artemis Game.handleMultiTouchGesture()
+    private boolean handleMultiTouchGesture(MotionEvent event, int eventAction, int pointerCount, View view) {
+
+        if (eventAction == MotionEvent.ACTION_POINTER_DOWN) {
+            if (pointerCount == 3) {
+                threeFingerDownTime = event.getEventTime();
+            } else if (pointerCount == 4) {
+                threeFingerDownTime = 0;
+                fourFingerDownTime = event.getEventTime();
+            } else if (pointerCount == 5) {
+                threeFingerDownTime = 0;
+                fourFingerDownTime = 0;
+                fiveFingerDownTime = event.getEventTime();
+            }
+        }
+
+        switch (eventAction) {
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+                long currentEventTime = event.getEventTime();
+                if (pointerCount >= 5 && fiveFingerDownTime > 0 && currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
+                    // CLUE: TODO call Artemis Game.showGameMenu(null), gated by
+                    // prefConfig.enableBackMenu, once the game menu is ported
+                    fiveFingerDownTime = 0;
+                    break;
+                } else if (pointerCount == 4 && fourFingerDownTime > 0 && currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
+                    // CLUE: TODO call Artemis Game.toggleFullKeyboard() once the full keyboard is ported
+                    fourFingerDownTime = 0;
+                    break;
+                } else if (pointerCount == 3 && threeFingerDownTime > 0 && currentEventTime - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
+                    toggleKeyboard();
+                    threeFingerDownTime = 0;
+                    break;
+                }
+                threeFingerDownTime = 0;
+                fourFingerDownTime = 0;
+                fiveFingerDownTime = 0;
+
+                cancelStaleTouchState(event, view);
+                return false;
+            default:
+                return false;
+        }
+
+        cancelStaleTouchState(event, view);
+        return true;
+    }
+
+    // CLUE: ported from Artemis Game.cancelStaleTouchState()
+    private void cancelStaleTouchState(MotionEvent event, View view) {
+        // CLUE: finger events always come from a view callback here, but stay safe without one
+        if (view != null) {
+            MotionEvent cancelEvent = MotionEvent.obtain(event);
+            cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+            view.dispatchTouchEvent(cancelEvent);
+            cancelEvent.recycle();
+        }
+        for (TouchContext aTouchContext : touchContextMap) {
+            aTouchContext.cancelTouch();
+            aTouchContext.setPointerCount(0);
+        }
+    }
+
+    // CLUE: ported from Artemis Game.initMouseMode(). Clue has no external display mode, so
+    // the saved touchscreen mode is always applied as is.
+    private void initMouseMode() {
+        String savedMouseModeIndexStr = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                .getString(com.clue.input.TouchMode.PREF, com.clue.input.TouchMode.DEFAULT);
+        applyMouseMode(com.clue.input.TouchMode.parse(savedMouseModeIndexStr));
+    }
+
+    // CLUE: ported from Artemis Game.selectMouseMode() for the in-stream menu. Clue has no
+    // external display mode, so every touchscreen mode is offered.
+    public void selectMouseMode(Context context) {
+        String[] allModes = getResources().getStringArray(R.array.mouse_mode_names);
+
+        List<MouseModeOption> options = new ArrayList<>();
+
+        for (int i = 0; i < allModes.length; i++) {
+            options.add(new MouseModeOption(i, allModes[i]));
+        }
+
+        options.add(new MouseModeOption(-1, getString(R.string.toggle_local_mouse_cursor)));
+
+        String[] labels = new String[options.size()];
+        for (int i = 0; i < options.size(); i++) {
+            labels[i] = options.get(i).label;
+        }
+        final MouseModeOption[] optionArray = options.toArray(new MouseModeOption[0]);
+
+        new AlertDialog.Builder(context)
+                .setTitle(getString(R.string.game_menu_select_mouse_mode))
+                .setItems(labels, (dialog, which) -> {
+                    dialog.dismiss();
+                    MouseModeOption selected = optionArray[which];
+                    if (selected.index == -1) {
+                        toggleMouseLocalCursor();
+                    } else {
+                        applyMouseMode(selected.index);
+                        if (prefConfig.rememberMouseMode) {
+                            android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+                                    .edit()
+                                    .putString(com.clue.input.TouchMode.PREF, String.valueOf(selected.index))
+                                    .apply();
+                        }
+                    }
+                })
+                .create()
+                .show();
+    }
+
+    // CLUE: ported from Artemis Game.toggleMouseLocalCursor()
+    private void toggleMouseLocalCursor() {
+        if (!grabbedInput) {
+            inputCaptureProvider.enableCapture();
+            grabbedInput = true;
+        }
+        cursorVisible = !cursorVisible;
+        if (cursorVisible) {
+            inputCaptureProvider.showCursor();
+        } else {
+            inputCaptureProvider.hideCursor();
+        }
+    }
+
+    // CLUE: ported from Artemis Game.applyMouseMode()
+    private void applyMouseMode(int mode) {
+        switch (mode) {
+            case com.clue.input.TouchMode.MULTI_TOUCH:
+                prefConfig.enableMultiTouchScreen = true;
+                prefConfig.touchscreenTrackpad = false;
+                break;
+            case com.clue.input.TouchMode.ABSOLUTE:
+            case com.clue.input.TouchMode.ABSOLUTE_SWAPPED:
+                prefConfig.enableMultiTouchScreen = false;
+                prefConfig.touchscreenTrackpad = false;
+                break;
+            case com.clue.input.TouchMode.TRACKPAD_NATURAL:
+            case com.clue.input.TouchMode.TRACKPAD_GAMING:
+                prefConfig.enableMultiTouchScreen = false;
+                prefConfig.touchscreenTrackpad = true;
+                break;
+            case com.clue.input.TouchMode.DISABLED:
+                break;
+            default:
+                break;
+        }
+
+        //Initialize touch contexts
+        for (int i = 0; i < touchContextMap.length; i++) {
+            if (touchContextMap[i] != null) touchContextMap[i].cancelTouch();
+            if (mode == com.clue.input.TouchMode.DISABLED) {
+                // Touch mouse disabled
+                touchContextMap[i] = null;
+            } else if (!prefConfig.touchscreenTrackpad) {
+                touchContextMap[i] = new AbsoluteTouchContext(conn, i, streamView,
+                        mode == com.clue.input.TouchMode.ABSOLUTE_SWAPPED);
+            } else if (mode == com.clue.input.TouchMode.TRACKPAD_GAMING) {
+                touchContextMap[i] = new RelativeTouchContext(conn, i, REFERENCE_HORIZ_RES, REFERENCE_VERT_RES, streamView, prefConfig);
+            } else {
+                touchContextMap[i] = new TrackpadContext(conn, i);
+            }
+        }
     }
 
     @Override

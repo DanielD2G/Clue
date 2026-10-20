@@ -129,11 +129,25 @@
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/category_input_settings"
         android:key="category_input_settings">
+        <!-- CLUE: Artemis touchscreen modes replace checkbox_touchscreen_trackpad -->
+        <ListPreference
+            android:key="mouse_mode_list"
+            android:title="@string/title_touchscreen_mode"
+            android:summary="@string/summary_touchscreen_mode"
+            android:entries="@array/mouse_mode_names"
+            android:entryValues="@array/mouse_mode_values"
+            android:defaultValue="0" />
         <CheckBoxPreference
-            android:key="checkbox_touchscreen_trackpad"
-            android:title="@string/title_checkbox_touchscreen_trackpad"
-            android:summary="@string/summary_checkbox_touchscreen_trackpad"
-            android:defaultValue="true" />
+            android:key="checkbox_remember_mouse_mode"
+            android:title="@string/title_checkbox_remember_mouse_mode"
+            android:summary="@string/summary_checkbox_remember_mouse_mode"
+            android:dependency="checkbox_mouse_emulation"
+            android:defaultValue="false" />
+        <CheckBoxPreference
+            android:key="checkbox_multi_touch_gestures"
+            android:title="@string/title_checkbox_multi_touch_gestures"
+            android:summary="@string/summary_checkbox_multi_touch_gestures"
+            android:defaultValue="false" />
         <CheckBoxPreference
             android:key="checkbox_mouse_nav_buttons"
             android:title="@string/title_checkbox_mouse_nav_buttons"

@@ -147,6 +147,10 @@ public class PreferenceConfiguration {
     public boolean vibrateFallbackToDevice;
     public int vibrateFallbackToDeviceStrength;
     public boolean touchscreenTrackpad;
+    // CLUE: Artemis touchscreen modes (mouse_mode_list)
+    public boolean enableMultiTouchScreen;
+    public boolean enableMultiTouchGestures;
+    public boolean rememberMouseMode;
     public MoonBridge.AudioConfiguration audioConfiguration;
     public int framePacing;
     public boolean clueAsyncDecode; // CLUE: async MediaCodec output path (A/B experiment)
@@ -378,6 +382,17 @@ public class PreferenceConfiguration {
                 editor.putString(FRAME_PACING_PREF_STRING, com.clue.defaults.ClueDefaults.FRAME_PACING);
             }
             editor.putBoolean("clue_pacing_v2", true);
+            changed = true;
+        }
+
+        // CLUE: the Artemis touchscreen mode list replaces checkbox_touchscreen_trackpad. Its old
+        // default can't be told apart from a choice, so every install moves to Multi-touch once.
+        String touchMode = com.clue.input.TouchMode.migrationValue(
+                prefs.getBoolean(com.clue.input.TouchMode.MIGRATION_PREF, false));
+        if (touchMode != null) {
+            editor.putString(com.clue.input.TouchMode.PREF, touchMode);
+            editor.remove(com.clue.input.TouchMode.LEGACY_TRACKPAD_PREF);
+            editor.putBoolean(com.clue.input.TouchMode.MIGRATION_PREF, true);
             changed = true;
         }
 
@@ -677,7 +692,14 @@ public class PreferenceConfiguration {
         config.vibrateFallbackToDevice = prefs.getBoolean(VIBRATE_FALLBACK_PREF_STRING, DEFAULT_VIBRATE_FALLBACK);
         config.vibrateFallbackToDeviceStrength = prefs.getInt(VIBRATE_FALLBACK_STRENGTH_PREF_STRING, DEFAULT_VIBRATE_FALLBACK_STRENGTH);
         config.flipFaceButtons = prefs.getBoolean(FLIP_FACE_BUTTONS_PREF_STRING, DEFAULT_FLIP_FACE_BUTTONS);
-        config.touchscreenTrackpad = prefs.getBoolean(TOUCHSCREEN_TRACKPAD_PREF_STRING, DEFAULT_TOUCHSCREEN_TRACKPAD);
+        // CLUE: the Artemis touchscreen mode list replaces checkbox_touchscreen_trackpad
+        //config.touchscreenTrackpad = prefs.getBoolean(TOUCHSCREEN_TRACKPAD_PREF_STRING, DEFAULT_TOUCHSCREEN_TRACKPAD);
+        int touchMode = com.clue.input.TouchMode.parse(
+                prefs.getString(com.clue.input.TouchMode.PREF, com.clue.input.TouchMode.DEFAULT));
+        config.enableMultiTouchScreen = com.clue.input.TouchMode.enableMultiTouchScreen(touchMode);
+        config.touchscreenTrackpad = com.clue.input.TouchMode.touchscreenTrackpad(touchMode);
+        config.rememberMouseMode = prefs.getBoolean(com.clue.input.TouchMode.REMEMBER_PREF, false);
+        config.enableMultiTouchGestures = prefs.getBoolean(com.clue.input.TouchMode.GESTURES_PREF, false);
         config.enableLatencyToast = prefs.getBoolean(LATENCY_TOAST_PREF_STRING, DEFAULT_LATENCY_TOAST);
         config.absoluteMouseMode = prefs.getBoolean(ABSOLUTE_MOUSE_MODE_PREF_STRING, DEFAULT_ABSOLUTE_MOUSE_MODE);
         config.enableAudioFx = prefs.getBoolean(ENABLE_AUDIO_FX_PREF_STRING, DEFAULT_ENABLE_AUDIO_FX);

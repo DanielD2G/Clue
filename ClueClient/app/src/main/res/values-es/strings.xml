@@ -219,6 +219,21 @@
     <string name="category_input_settings">Opciones de Entrada</string>
     <string name="title_checkbox_touchscreen_trackpad">Usa la pantalla táctil como panel táctil</string>
     <string name="summary_checkbox_touchscreen_trackpad">Si está activo, la pantalla táctil funcionará como panel táctil. Si está desactivado, la pantalla táctil directamente controlará el cursor del ratón.</string>
+    <!-- CLUE: modos de pantalla táctil de Artemis (Artemis no trae traducción al español) -->
+    <string name="title_touchscreen_mode">Modo de pantalla táctil</string>
+    <string name="summary_touchscreen_mode">Elige entre multitáctil, toque simple, panel táctil o desactivado.\nEl lápiz o stylus sigue funcionando aunque elijas Desactivado.</string>
+    <string name="title_checkbox_remember_mouse_mode">Recordar el modo de mouse</string>
+    <string name="summary_checkbox_remember_mouse_mode">Recuerda el modo de mouse que elijas durante el streaming. Si está desactivado, el cambio de modo durante el streaming es temporal.</string>
+    <string name="title_checkbox_multi_touch_gestures">Activar gestos multitáctiles</string>
+    <string name="summary_checkbox_multi_touch_gestures">En el modo multitáctil, toca con 3 dedos para el teclado, con 4 para el teclado completo y con 5 para el menú rápido.</string>
+    <string name="mouse_mode_multi_touch">Multitáctil</string>
+    <string name="mouse_mode_absolute_touch">Toque absoluto</string>
+    <string name="mouse_mode_track_pad_natural">Panel táctil (natural / doble toque para arrastrar)</string>
+    <string name="mouse_mode_track_pad_gaming">Panel táctil (juegos / mantener pulsado para arrastrar)</string>
+    <string name="mouse_mode_disabled">Desactivado</string>
+    <string name="mouse_mode_absolute_touch_swapped">Toque absoluto (clic izquierdo y derecho invertidos)</string>
+    <string name="game_menu_select_mouse_mode">Elegir el modo de mouse</string>
+    <string name="toggle_local_mouse_cursor">Mostrar u ocultar el cursor local (requiere un mouse físico)</string>
     <string name="summary_seekbar_deadzone">Nota: Algunos juegos pueden forzar una zona muerta mayor a la que Moonlight esta configurada a usar.</string>
     <string name="title_checkbox_flip_face_buttons">Invertir botones frontales</string>
     <string name="summary_checkbox_absolute_mouse_mode">Esto puede hacer que la aceleración de mouse se comporte mas natural para uso de escritorio remoto, pero es incompatible con muchos juegos.</string>
