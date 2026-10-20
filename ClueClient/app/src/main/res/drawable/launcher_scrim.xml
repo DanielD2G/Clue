@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: dims the blurred cover art behind the launcher so text and cards stay readable -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#66000000" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:angle="270"
+                android:startColor="#B3000000"
+                android:centerColor="#00000000"
+                android:endColor="#D9000000" />
+        </shape>
+    </item>
+</layer-list>

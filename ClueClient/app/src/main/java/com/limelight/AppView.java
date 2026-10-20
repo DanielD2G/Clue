@@ -15,6 +15,8 @@ import com.limelight.nvstream.http.PairingManager;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.AdapterFragment;
 import com.limelight.ui.AdapterFragmentCallbacks;
+import com.limelight.ui.CoverCarousel;
+import com.limelight.ui.LauncherUi;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.ServerHelper;
@@ -31,6 +33,15 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.app.AlertDialog;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.KeyEvent;
+import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -49,7 +60,10 @@ import android.widget.AdapterView.AdapterContextMenuInfo;
 
 import org.xmlpull.v1.XmlPullParserException;
 
-public class AppView extends Activity implements AdapterFragmentCallbacks {
+public class AppView extends Activity { // CLUE: the launcher carousel replaces the AdapterFragment grid
+    // CLUE: console-style launcher (Library tab)
+    private LauncherUi launcherUi;
+    private CoverCarousel carousel;
     private AppGridAdapter appGridAdapter;
     private String uuidString;
     private ShortcutHelper shortcutHelper;
@@ -136,16 +150,9 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
                                 return;
                             }
 
-                            // Despite my best efforts to catch all conditions that could
-                            // cause the activity to be destroyed when we try to commit
-                            // I haven't been able to, so we have this try-catch block.
-                            try {
-                                getFragmentManager().beginTransaction()
-                                        .replace(R.id.appFragmentContainer, new AdapterFragment())
-                                        .commitAllowingStateLoss();
-                            } catch (IllegalStateException e) {
-                                e.printStackTrace();
-                            }
+                            // CLUE: feed the launcher carousel instead of the upstream grid fragment
+                            carousel.setAdapter(appGridAdapter);
+                            carousel.requestFocus();
                         }
                     });
                 }
@@ -167,14 +174,8 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
             // Update the app grid adapter to create grid items with the correct layout
             appGridAdapter.updateLayoutWithPreferences(this, PreferenceConfiguration.readPreferences(this));
 
-            try {
-                // Reinflate the app grid itself to pick up the layout change
-                getFragmentManager().beginTransaction()
-                        .replace(R.id.appFragmentContainer, new AdapterFragment())
-                        .commitAllowingStateLoss();
-            } catch (IllegalStateException e) {
-                e.printStackTrace();
-            }
+            // CLUE: rebind the launcher carousel with the new loader
+            appGridAdapter.notifyDataSetChanged();
         }
     }
 
@@ -291,7 +292,7 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
 
         UiHelper.setLocale(this);
 
-        setContentView(R.layout.activity_app_view);
+        setContentView(R.layout.activity_launcher); // CLUE
 
         // Allow floating expanded PiP overlays while browsing apps
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -310,9 +311,8 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
 
         String computerName = getIntent().getStringExtra(NAME_EXTRA);
 
-        TextView label = findViewById(R.id.appListText);
         setTitle(computerName);
-        label.setText(computerName);
+        setupLauncher(computerName); // CLUE
 
         // Bind to the computer manager service
         bindService(new Intent(this, ComputerManagerService.class), serviceConnection,
@@ -390,6 +390,10 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
 
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo) {
+        if (menuInfo == null) {
+            return; // CLUE: nothing selected in the launcher carousel
+        }
+
         super.onCreateContextMenu(menu, v, menuInfo);
 
         AdapterContextMenuInfo info = (AdapterContextMenuInfo) menuInfo;
@@ -617,32 +621,212 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
         });
     }
 
-    @Override
-    public int getAdapterFragmentLayoutId() {
-        return PreferenceConfiguration.readPreferences(AppView.this).smallIconMode ?
-                    R.layout.app_grid_view_small : R.layout.app_grid_view;
-    }
-
-    @Override
-    public void receiveAbsListView(AbsListView listView) {
-        listView.setAdapter(appGridAdapter);
-        listView.setOnItemClickListener(new OnItemClickListener() {
+    // CLUE: console-style launcher (Library tab)
+    private void setupLauncher(String computerName) {
+        launcherUi = new LauncherUi(this, LauncherUi.TAB_LIBRARY, new LauncherUi.Host() {
             @Override
-            public void onItemClick(AdapterView<?> arg0, View arg1, int pos,
-                                    long id) {
-                AppObject app = (AppObject) appGridAdapter.getItem(pos);
+            public void onTabRequested(int tab) {
+                if (tab == LauncherUi.TAB_COMPUTERS) {
+                    finish();
+                }
+            }
+        });
+        launcherUi.setAction(R.id.action_add_pc, false, null);
+        launcherUi.setAction(R.id.action_help, false, null);
+        launcherUi.setAction(R.id.action_search, true, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSearch();
+            }
+        });
+        launcherUi.setFooter(computerName, R.drawable.ic_computer);
+        launcherUi.setHint(R.id.hint_x, R.id.hint_x_label, getString(R.string.launcher_search), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSearch();
+            }
+        });
+        launcherUi.setHint(R.id.hint_b, R.id.hint_b_label, getString(R.string.launcher_hint_back), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
+        updateSelectionInfo();
+
+        carousel = launcherUi.getCarousel();
+        carousel.setListener(new CoverCarousel.Listener() {
+            @Override
+            public void onSelectionChanged(int position) {
+                updateSelectionInfo();
+            }
+
+            @Override
+            public void onItemActivated(int position) {
+                AppObject app = (AppObject) appGridAdapter.getItem(position);
 
                 // Only open the context menu if something is running, otherwise start it
                 if (lastRunningAppId != 0) {
-                    openContextMenu(arg1);
+                    openContextMenu(carousel);
                 } else {
                     ServerHelper.doStart(AppView.this, app.app, computer, managerBinder);
                 }
             }
+
+            @Override
+            public void onItemOptions(int position) {
+                openContextMenu(carousel);
+            }
+
+            @Override
+            public void onSelectedCoverChanged(int position, Drawable cover) {
+                launcherUi.setBackgroundArt(cover);
+            }
+
+            @Override
+            public void onMetricsChanged(CoverCarousel c) {
+                launcherUi.positionInfo();
+            }
         });
-        UiHelper.applyStatusBarPadding(listView);
-        registerForContextMenu(listView);
-        listView.requestFocus();
+        registerForContextMenu(carousel);
+    }
+
+    private void updateSelectionInfo() {
+        int position = carousel != null && appGridAdapter != null ? carousel.getSelection() : -1;
+        if (position < 0) {
+            launcherUi.setInfo(null, null, 0);
+            launcherUi.setHint(R.id.hint_a, R.id.hint_a_label, null, null);
+            launcherUi.setHint(R.id.hint_y, R.id.hint_y_label, null, null);
+
+            // Only once we know the app list, so it doesn't flash during the first load
+            String filter = appGridAdapter != null ? appGridAdapter.getFilter() : "";
+            if (!filter.isEmpty()) {
+                launcherUi.setEmpty(getString(R.string.launcher_no_results, filter), false);
+            }
+            else if (lastRawApplist != null && blockingLoadSpinner == null) {
+                launcherUi.setEmpty(getString(R.string.launcher_no_games), false);
+            }
+            else {
+                launcherUi.setEmpty(null, false);
+            }
+            return;
+        }
+        launcherUi.setEmpty(null, false);
+
+        AppObject app = (AppObject) appGridAdapter.getItem(position);
+        String chip = null;
+        int chipIcon = 0;
+        if (app.isRunning) {
+            chip = getString(R.string.launcher_chip_running);
+            chipIcon = R.drawable.ic_play;
+        }
+        else if (app.isHidden) {
+            chip = getString(R.string.launcher_chip_hidden);
+        }
+        launcherUi.setInfo(app.app.getAppName(), chip, chipIcon);
+
+        int action;
+        if (app.isRunning) {
+            action = R.string.launcher_hint_resume;
+        }
+        else if (lastRunningAppId != 0) {
+            action = R.string.launcher_hint_options;
+        }
+        else {
+            action = R.string.launcher_hint_launch;
+        }
+        launcherUi.setHint(R.id.hint_a, R.id.hint_a_label, getString(action), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                carousel.activateSelection();
+            }
+        });
+        launcherUi.setHint(R.id.hint_y, R.id.hint_y_label, getString(R.string.launcher_hint_options), new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (carousel.getSelection() >= 0) {
+                    openContextMenu(carousel);
+                }
+            }
+        });
+    }
+
+    private void showSearch() {
+        if (appGridAdapter == null) {
+            return;
+        }
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(R.string.launcher_search_hint);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        input.setText(appGridAdapter.getFilter());
+        input.setSelection(input.getText().length());
+
+        FrameLayout container = new FrameLayout(this);
+        int padding = Math.round(24 * getResources().getDisplayMetrics().density);
+        container.setPadding(padding, padding / 2, padding, 0);
+        container.addView(input);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.launcher_search)
+                .setView(container)
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.launcher_search_clear, (d, which) -> applySearch(""))
+                .create();
+
+        // Filter live while typing
+        input.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                applySearch(s.toString());
+            }
+        });
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            dialog.dismiss();
+            return true;
+        });
+
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        dialog.show();
+        input.requestFocus();
+    }
+
+    private void applySearch(String text) {
+        appGridAdapter.setFilter(text);
+        launcherUi.setFilterLabel(appGridAdapter.getFilter());
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (launcherUi != null) {
+            // CLUE: X searches, shoulder buttons switch launcher tabs
+            if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_X) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    showSearch();
+                }
+                return true;
+            }
+            if (launcherUi.handleKeyEvent(event)) {
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // CLUE: full-screen launcher
+        if (hasFocus && launcherUi != null) {
+            launcherUi.applyImmersive();
+        }
     }
 
     public static class AppObject {

@@ -29,6 +29,8 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     private static final int ART_WIDTH_PX = 300;
     private static final int SMALL_WIDTH_DP = 100;
     private static final int LARGE_WIDTH_DP = 150;
+    // CLUE: width of the selected cover in the launcher carousel on the reference tablet
+    private static final int CAROUSEL_WIDTH_DP = 300;
 
     private final ComputerDetails computer;
     private final String uniqueId;
@@ -37,6 +39,8 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     private CachedAppAssetLoader loader;
     private Set<Integer> hiddenAppIds = new HashSet<>();
     private ArrayList<AppView.AppObject> allApps = new ArrayList<>();
+    // CLUE: launcher search, lowercase
+    private String filter = "";
 
     public AppGridAdapter(Context context, PreferenceConfiguration prefs, ComputerDetails computer, String uniqueId, boolean showHiddenApps) {
         super(context, getLayoutIdForPreferences(prefs));
@@ -58,7 +62,7 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
             for (AppView.AppObject app : allApps) {
                 app.isHidden = hiddenAppIds.contains(app.app.getAppId());
 
-                if (!app.isHidden || showHiddenApps) {
+                if ((!app.isHidden || showHiddenApps) && matchesFilter(app)) { // CLUE: and the search filter
                     itemList.add(app);
                 }
             }
@@ -74,6 +78,10 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     }
 
     private static int getLayoutIdForPreferences(PreferenceConfiguration prefs) {
+        // CLUE: the launcher carousel always uses its cover card
+        if (true) {
+            return R.layout.launcher_cover_item;
+        }
         if (prefs.smallIconMode) {
             return R.layout.app_grid_item_small;
         }
@@ -92,6 +100,7 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
         else {
             dp = LARGE_WIDTH_DP;
         }
+        dp = CAROUSEL_WIDTH_DP; // CLUE
 
         double scalingDivisor = ART_WIDTH_PX / (dp * (dpi / 160.0));
         if (scalingDivisor < 1.0) {
@@ -113,6 +122,29 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
 
         // This will trigger the view to reload with the new layout
         setLayoutId(getLayoutIdForPreferences(prefs));
+    }
+
+    // CLUE: launcher search. Rebuilds the visible list from all apps; empty shows everything.
+    public void setFilter(String newFilter) {
+        filter = newFilter == null ? "" : newFilter.trim().toLowerCase();
+
+        itemList.clear();
+        for (AppView.AppObject app : allApps) {
+            if ((!app.isHidden || showHiddenApps) && matchesFilter(app)) {
+                loader.queueCacheLoad(app.app);
+                itemList.add(app);
+            }
+        }
+
+        notifyDataSetChanged();
+    }
+
+    public String getFilter() {
+        return filter;
+    }
+
+    private boolean matchesFilter(AppView.AppObject app) {
+        return filter.isEmpty() || app.app.getAppName().toLowerCase().contains(filter);
     }
 
     public void cancelQueuedOperations() {
@@ -139,7 +171,7 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
         sortList(allApps);
 
         // Add the app to the adapter data if it's not hidden
-        if (showHiddenApps || !app.isHidden) {
+        if ((showHiddenApps || !app.isHidden) && matchesFilter(app)) { // CLUE: and the search filter
             // Queue a request to fetch this bitmap into cache
             loader.queueCacheLoad(app.app);
 

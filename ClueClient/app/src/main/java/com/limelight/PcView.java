@@ -22,6 +22,8 @@ import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.preferences.StreamSettings;
 import com.limelight.ui.AdapterFragment;
 import com.limelight.ui.AdapterFragmentCallbacks;
+import com.limelight.ui.CoverCarousel;
+import com.limelight.ui.LauncherUi;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.HelpLauncher;
 import com.limelight.utils.ServerHelper;
@@ -41,6 +43,8 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
 import android.view.ContextMenu;
+import android.graphics.drawable.Drawable;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -59,8 +63,11 @@ import org.xmlpull.v1.XmlPullParserException;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-public class PcView extends Activity implements AdapterFragmentCallbacks {
-    private RelativeLayout noPcFoundLayout;
+public class PcView extends Activity { // CLUE: the launcher carousel replaces the AdapterFragment grid
+    // CLUE: console-style launcher (Computers tab)
+    private LauncherUi launcherUi;
+    private CoverCarousel carousel;
+    private int lastSelection;
     private PcGridAdapter pcGridAdapter;
     private ShortcutHelper shortcutHelper;
     private ComputerManagerService.ComputerManagerBinder managerBinder;
@@ -121,7 +128,7 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
     private final static int GAMESTREAM_EOL_ID = 11;
 
     private void initializeViews() {
-        setContentView(R.layout.activity_pc_view);
+        setContentView(R.layout.activity_launcher); // CLUE
 
         UiHelper.notifyNewRootView(this);
 
@@ -155,17 +162,29 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         // Set the correct layout for the PC grid
         pcGridAdapter.updateLayoutWithPreferences(this, PreferenceConfiguration.readPreferences(this));
 
-        // Setup the list view
-        ImageButton settingsButton = findViewById(R.id.settingsButton);
-        ImageButton addComputerButton = findViewById(R.id.manuallyAddPc);
-        ImageButton helpButton = findViewById(R.id.helpButton);
-
-        settingsButton.setOnClickListener(new OnClickListener() {
+        // CLUE: console-style launcher. Settings is a tab now; add PC and help sit in the top bar.
+        launcherUi = new LauncherUi(this, LauncherUi.TAB_COMPUTERS, new LauncherUi.Host() {
             @Override
-            public void onClick(View v) {
-                startActivity(new Intent(PcView.this, StreamSettings.class));
+            public void onTabRequested(int tab) {
+                if (tab == LauncherUi.TAB_LIBRARY) {
+                    openSelectedLibrary();
+                }
             }
         });
+        launcherUi.setAction(R.id.action_search, false, null);
+        launcherUi.setHint(R.id.hint_x, R.id.hint_x_label, null, null);
+        launcherUi.setHint(R.id.hint_b, R.id.hint_b_label, null, null);
+        launcherUi.setHint(R.id.hint_y, R.id.hint_y_label, getString(R.string.launcher_hint_options), new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openSelectedOptions();
+            }
+        });
+
+        // Setup the list view
+        ImageButton addComputerButton = findViewById(R.id.action_add_pc);
+        ImageButton helpButton = findViewById(R.id.action_help);
+
         addComputerButton.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -187,18 +206,144 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             helpButton.setVisibility(View.GONE);
         }
 
-        getFragmentManager().beginTransaction()
-            .replace(R.id.pcFragmentContainer, new AdapterFragment())
-            .commitAllowingStateLoss();
+        // CLUE: the carousel replaces the upstream AdapterFragment grid
+        carousel = launcherUi.getCarousel();
+        carousel.setListener(new CoverCarousel.Listener() {
+            @Override
+            public void onSelectionChanged(int position) {
+                if (position >= 0) {
+                    lastSelection = position;
+                }
+                updateSelectionInfo();
+            }
 
-        noPcFoundLayout = findViewById(R.id.no_pc_found_layout);
-        if (pcGridAdapter.getCount() == 0) {
-            noPcFoundLayout.setVisibility(View.VISIBLE);
+            @Override
+            public void onItemActivated(int position) {
+                activateComputer(position);
+            }
+
+            @Override
+            public void onItemOptions(int position) {
+                openSelectedOptions();
+            }
+
+            @Override
+            public void onSelectedCoverChanged(int position, Drawable cover) {
+            }
+
+            @Override
+            public void onMetricsChanged(CoverCarousel c) {
+                launcherUi.positionInfo();
+            }
+        });
+        registerForContextMenu(carousel);
+        carousel.setAdapter(pcGridAdapter);
+        carousel.setSelection(lastSelection, false);
+        carousel.requestFocus();
+
+        updateEmptyState();
+        pcGridAdapter.notifyDataSetChanged();
+    }
+
+    // CLUE: launcher helpers
+    private void updateEmptyState() {
+        launcherUi.setEmpty(pcGridAdapter.getCount() == 0 ? getString(R.string.launcher_searching) : null, true);
+    }
+
+    private void updateSelectionInfo() {
+        int position = carousel.getSelection();
+        if (position < 0) {
+            launcherUi.setInfo(null, null, 0);
+            launcherUi.setHint(R.id.hint_a, R.id.hint_a_label, null, null);
+            launcherUi.setHint(R.id.hint_y, R.id.hint_y_label, null, null);
+            return;
+        }
+
+        ComputerDetails details = ((ComputerObject) pcGridAdapter.getItem(position)).details;
+        int chip, action;
+        if (details.state == ComputerDetails.State.UNKNOWN) {
+            chip = R.string.launcher_chip_checking;
+            action = R.string.launcher_hint_options;
+        }
+        else if (details.state == ComputerDetails.State.OFFLINE) {
+            chip = R.string.launcher_chip_offline;
+            action = R.string.launcher_hint_options;
+        }
+        else if (details.pairState != PairState.PAIRED) {
+            chip = R.string.launcher_chip_unpaired;
+            action = R.string.launcher_hint_pair;
         }
         else {
-            noPcFoundLayout.setVisibility(View.INVISIBLE);
+            chip = details.runningGameId != 0 ? R.string.launcher_chip_in_game : R.string.launcher_chip_online;
+            action = R.string.launcher_hint_open;
         }
-        pcGridAdapter.notifyDataSetChanged();
+
+        launcherUi.setInfo(details.name, getString(chip), details.runningGameId != 0 ? R.drawable.ic_play : 0);
+        launcherUi.setHint(R.id.hint_a, R.id.hint_a_label, getString(action), new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                activateComputer(carousel.getSelection());
+            }
+        });
+        launcherUi.setHint(R.id.hint_y, R.id.hint_y_label, getString(R.string.launcher_hint_options), new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openSelectedOptions();
+            }
+        });
+    }
+
+    private void activateComputer(int position) {
+        if (position < 0) {
+            return;
+        }
+        ComputerObject computer = (ComputerObject) pcGridAdapter.getItem(position);
+        if (computer.details.state == ComputerDetails.State.UNKNOWN ||
+            computer.details.state == ComputerDetails.State.OFFLINE) {
+            // Open the context menu if a PC is offline or refreshing
+            openContextMenu(carousel);
+        } else if (computer.details.pairState != PairState.PAIRED) {
+            // Pair an unpaired machine by default
+            doPair(computer.details);
+        } else {
+            doAppList(computer.details, false, false);
+        }
+    }
+
+    private void openSelectedOptions() {
+        if (carousel.getSelection() >= 0) {
+            openContextMenu(carousel);
+        }
+    }
+
+    private void openSelectedLibrary() {
+        int position = carousel.getSelection();
+        if (position >= 0) {
+            ComputerDetails details = ((ComputerObject) pcGridAdapter.getItem(position)).details;
+            if (details.state == ComputerDetails.State.ONLINE && details.pairState == PairState.PAIRED) {
+                doAppList(details, false, false);
+                return;
+            }
+        }
+        Toast.makeText(this, getResources().getString(R.string.launcher_select_paired_pc), Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        // CLUE: shoulder buttons switch launcher tabs
+        if (launcherUi != null && launcherUi.handleKeyEvent(event)) {
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // CLUE: full-screen launcher
+        if (hasFocus && launcherUi != null) {
+            launcherUi.applyImmersive();
+        }
     }
 
     @Override
@@ -346,6 +491,10 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
 
     @Override
     public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo) {
+        if (menuInfo == null) {
+            return; // CLUE: nothing selected in the launcher carousel
+        }
+
         stopComputerUpdates(false);
 
         // Call superclass
@@ -721,10 +870,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
                 pcGridAdapter.removeComputer(computer);
                 pcGridAdapter.notifyDataSetChanged();
 
-                if (pcGridAdapter.getCount() == 0) {
-                    // Show the "Discovery in progress" view
-                    noPcFoundLayout.setVisibility(View.VISIBLE);
-                }
+                // Show the "Discovery in progress" view if needed
+                updateEmptyState(); // CLUE
 
                 break;
             }
@@ -753,40 +900,11 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             pcGridAdapter.addComputer(new ComputerObject(details));
 
             // Remove the "Discovery in progress" view
-            noPcFoundLayout.setVisibility(View.INVISIBLE);
+            updateEmptyState(); // CLUE
         }
 
         // Notify the view that the data has changed
         pcGridAdapter.notifyDataSetChanged();
-    }
-
-    @Override
-    public int getAdapterFragmentLayoutId() {
-        return R.layout.pc_grid_view;
-    }
-
-    @Override
-    public void receiveAbsListView(AbsListView listView) {
-        listView.setAdapter(pcGridAdapter);
-        listView.setOnItemClickListener(new OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> arg0, View arg1, int pos,
-                                    long id) {
-                ComputerObject computer = (ComputerObject) pcGridAdapter.getItem(pos);
-                if (computer.details.state == ComputerDetails.State.UNKNOWN ||
-                    computer.details.state == ComputerDetails.State.OFFLINE) {
-                    // Open the context menu if a PC is offline or refreshing
-                    openContextMenu(arg1);
-                } else if (computer.details.pairState != PairState.PAIRED) {
-                    // Pair an unpaired machine by default
-                    doPair(computer.details);
-                } else {
-                    doAppList(computer.details, false, false);
-                }
-            }
-        });
-        UiHelper.applyStatusBarPadding(listView);
-        registerForContextMenu(listView);
     }
 
     public static class ComputerObject {

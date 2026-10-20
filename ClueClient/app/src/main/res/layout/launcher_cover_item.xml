@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: game cover card for the launcher carousel. CoverCarousel sets its size and rounded clip. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="228dp"
+    android:layout_height="320dp"
+    android:background="@color/clue_launcher_card">
+
+    <com.limelight.ui.CoverImageView
+        android:id="@+id/grid_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/grid_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="16dp"
+        android:background="@drawable/launcher_cover_shade"
+        android:maxLines="4"
+        android:ellipsize="end"
+        android:textColor="@color/clue_launcher_text"
+        android:textSize="20sp"
+        android:fontFamily="sans-serif-medium" />
+
+    <ImageView
+        android:id="@+id/grid_overlay"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:visibility="gone"
+        android:importantForAccessibility="no" />
+</FrameLayout>

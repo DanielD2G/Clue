@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: console-style launcher (PcView / AppView) -->
+<resources>
+    <color name="clue_launcher_bg">#0B0F14</color>
+    <color name="clue_launcher_card">#1A2230</color>
+    <color name="clue_launcher_text">#FFFFFFFF</color>
+    <color name="clue_launcher_text_dim">#B3FFFFFF</color>
+    <color name="clue_launcher_chip">#33FFFFFF</color>
+    <color name="clue_launcher_glow">#FFE8F1FF</color>
+
+    <dimen name="clue_launcher_edge">48dp</dimen>
+    <dimen name="clue_launcher_bar_height">72dp</dimen>
+    <dimen name="clue_launcher_card_gap">16dp</dimen>
+    <dimen name="clue_launcher_card_radius">14dp</dimen>
+    <dimen name="clue_launcher_glow">22dp</dimen>
+    <dimen name="clue_launcher_stroke">3dp</dimen>
+    <dimen name="clue_launcher_icon">28dp</dimen>
+
+    <style name="ClueLauncherTab">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:background">@drawable/launcher_pill</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <style name="ClueLauncherTabIcon">
+        <item name="android:layout_width">@dimen/clue_launcher_icon</item>
+        <item name="android:layout_height">@dimen/clue_launcher_icon</item>
+        <item name="android:tint">@color/clue_launcher_text</item>
+        <item name="android:duplicateParentState">true</item>
+    </style>
+
+    <style name="ClueLauncherTabLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:textColor">@color/clue_launcher_text</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:visibility">gone</item>
+    </style>
+
+    <style name="ClueLauncherAction">
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:tint">@color/clue_launcher_text</item>
+        <item name="android:background">@drawable/launcher_pill</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="ClueLauncherHint">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_marginStart">16dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:background">@drawable/launcher_pill</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">false</item>
+    </style>
+
+    <style name="ClueLauncherHintButton">
+        <item name="android:layout_width">30dp</item>
+        <item name="android:layout_height">30dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/launcher_hint_circle</item>
+        <item name="android:textColor">@color/clue_launcher_bg</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:duplicateParentState">true</item>
+    </style>
+
+    <style name="ClueLauncherHintLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">10dp</item>
+        <item name="android:textColor">@color/clue_launcher_text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:duplicateParentState">true</item>
+    </style>
+</resources>

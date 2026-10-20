@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: console-style launcher shared by PcView (Computers tab) and AppView (Library tab) -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/launcher_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/launcher_bg_default">
+
+    <ImageView
+        android:id="@+id/launcher_bg_a"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:alpha="0"
+        android:importantForAccessibility="no" />
+
+    <ImageView
+        android:id="@+id/launcher_bg_b"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:alpha="0"
+        android:importantForAccessibility="no" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/launcher_scrim" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Top bar: tabs on the left, actions and status on the right -->
+        <LinearLayout
+            android:id="@+id/launcher_top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/clue_launcher_bar_height"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="36dp"
+            android:paddingEnd="@dimen/clue_launcher_edge">
+
+            <LinearLayout
+                android:id="@+id/tab_library"
+                style="@style/ClueLauncherTab"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:contentDescription="@string/launcher_tab_library">
+                <ImageView
+                    style="@style/ClueLauncherTabIcon"
+                    android:src="@drawable/ic_launcher_library"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/tab_library_label"
+                    style="@style/ClueLauncherTabLabel"
+                    android:text="@string/launcher_tab_library" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tab_computers"
+                style="@style/ClueLauncherTab"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:contentDescription="@string/launcher_tab_computers">
+                <ImageView
+                    style="@style/ClueLauncherTabIcon"
+                    android:src="@drawable/ic_computer"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/tab_computers_label"
+                    style="@style/ClueLauncherTabLabel"
+                    android:text="@string/launcher_tab_computers" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tab_settings"
+                style="@style/ClueLauncherTab"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:contentDescription="@string/launcher_tab_settings">
+                <ImageView
+                    style="@style/ClueLauncherTabIcon"
+                    android:src="@drawable/ic_settings"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/tab_settings_label"
+                    style="@style/ClueLauncherTabLabel"
+                    android:text="@string/launcher_tab_settings" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/launcher_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:maxWidth="320dp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textColor="@color/clue_launcher_text_dim"
+                android:textSize="18sp"
+                android:visibility="gone" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/action_search"
+                style="@style/ClueLauncherAction"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:src="@drawable/ic_launcher_search"
+                android:contentDescription="@string/launcher_search" />
+
+            <ImageButton
+                android:id="@+id/action_add_pc"
+                style="@style/ClueLauncherAction"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:src="@drawable/ic_add"
+                android:contentDescription="@string/launcher_add_pc" />
+
+            <ImageButton
+                android:id="@+id/action_help"
+                style="@style/ClueLauncherAction"
+                android:nextFocusDown="@+id/launcher_carousel"
+                android:src="@drawable/ic_help"
+                android:contentDescription="@string/launcher_help" />
+
+            <com.limelight.ui.LauncherStatusView
+                android:id="@+id/launcher_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ImageView
+                    android:id="@+id/status_gamepad"
+                    android:layout_width="@dimen/clue_launcher_icon"
+                    android:layout_height="@dimen/clue_launcher_icon"
+                    android:src="@drawable/ic_launcher_gamepad"
+                    android:tint="@color/clue_launcher_text"
+                    android:contentDescription="@string/launcher_controller" />
+
+                <View
+                    android:layout_width="2dp"
+                    android:layout_height="22dp"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:background="#66FFFFFF" />
+
+                <TextClock
+                    android:id="@+id/status_clock"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:format12Hour="h:mm"
+                    android:format24Hour="HH:mm"
+                    android:textColor="@color/clue_launcher_text"
+                    android:textSize="19sp"
+                    android:fontFamily="sans-serif-medium" />
+
+                <ImageView
+                    android:id="@+id/status_wifi"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="16dp"
+                    android:src="@drawable/ic_launcher_wifi"
+                    android:tint="@color/clue_launcher_text"
+                    android:importantForAccessibility="no" />
+
+                <com.limelight.ui.BatteryIconView
+                    android:id="@+id/status_battery"
+                    android:layout_width="30dp"
+                    android:layout_height="15dp"
+                    android:layout_marginStart="16dp" />
+
+                <TextView
+                    android:id="@+id/status_battery_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:textColor="@color/clue_launcher_text"
+                    android:textSize="17sp"
+                    android:fontFamily="sans-serif-medium" />
+            </com.limelight.ui.LauncherStatusView>
+        </LinearLayout>
+
+        <!-- Carousel area: the info row is placed by LauncherUi under the small covers, next to the selected one -->
+        <FrameLayout
+            android:id="@+id/launcher_carousel_frame"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="12dp">
+
+            <com.limelight.ui.CoverCarousel
+                android:id="@+id/launcher_carousel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:nextFocusUp="@+id/tab_library"
+                android:scrollbars="none"
+                android:overScrollMode="never"
+                android:focusable="true"
+                android:focusableInTouchMode="true" />
+
+            <LinearLayout
+                android:id="@+id/launcher_info"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="invisible">
+
+                <TextView
+                    android:id="@+id/launcher_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="@color/clue_launcher_text"
+                    android:textSize="26sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:shadowColor="#99000000"
+                    android:shadowRadius="6" />
+
+                <TextView
+                    android:id="@+id/launcher_chip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:drawablePadding="6dp"
+                    android:background="@drawable/launcher_chip"
+                    android:singleLine="true"
+                    android:textColor="@color/clue_launcher_text"
+                    android:textSize="15sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/launcher_empty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/launcher_empty_progress"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginEnd="16dp"
+                    android:indeterminate="true" />
+
+                <TextView
+                    android:id="@+id/launcher_empty_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/clue_launcher_text_dim"
+                    android:textSize="22sp" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Bottom bar: context on the left, controller hints on the right (also tappable) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/clue_launcher_bar_height"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="@dimen/clue_launcher_edge"
+            android:paddingEnd="36dp">
+
+            <TextView
+                android:id="@+id/launcher_footer"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:drawablePadding="10dp"
+                android:textColor="@color/clue_launcher_text_dim"
+                android:textSize="17sp" />
+
+            <LinearLayout android:id="@+id/hint_x" style="@style/ClueLauncherHint">
+                <TextView style="@style/ClueLauncherHintButton" android:text="X" />
+                <TextView android:id="@+id/hint_x_label" style="@style/ClueLauncherHintLabel" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/hint_y" style="@style/ClueLauncherHint">
+                <TextView style="@style/ClueLauncherHintButton" android:text="Y" />
+                <TextView android:id="@+id/hint_y_label" style="@style/ClueLauncherHintLabel" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/hint_b" style="@style/ClueLauncherHint">
+                <TextView style="@style/ClueLauncherHintButton" android:text="B" />
+                <TextView android:id="@+id/hint_b_label" style="@style/ClueLauncherHintLabel" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/hint_a" style="@style/ClueLauncherHint">
+                <TextView style="@style/ClueLauncherHintButton" android:text="A" />
+                <TextView android:id="@+id/hint_a_label" style="@style/ClueLauncherHintLabel" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

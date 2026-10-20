@@ -22,7 +22,8 @@ public class PcGridAdapter extends GenericGridAdapter<PcView.ComputerObject> {
     }
 
     private static int getLayoutIdForPreferences(PreferenceConfiguration prefs) {
-        return R.layout.pc_grid_item;
+        // CLUE: card for the launcher carousel
+        return R.layout.pc_cover_item;
     }
 
     public void updateLayoutWithPreferences(Context context, PreferenceConfiguration prefs) {

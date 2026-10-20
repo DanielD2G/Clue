@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: launcher PC card background -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="300"
+        android:startColor="#FF26405C"
+        android:endColor="#FF111822" />
+</shape>

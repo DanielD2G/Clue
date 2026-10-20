@@ -370,4 +370,33 @@
     <string name="pref_error_occurred">Ocurrió un error: </string>
     <string name="game_menu_coming_soon">Próximamente</string>
     <string name="game_menu_server_cmd_failed">El host no pudo recibir el comando del servidor</string>
+
+    <!-- CLUE: launcher estilo consola -->
+    <string name="launcher_tab_library">Biblioteca</string>
+    <string name="launcher_tab_computers">Equipos</string>
+    <string name="launcher_tab_settings">Ajustes</string>
+    <string name="launcher_search">Buscar</string>
+    <string name="launcher_add_pc">Añadir equipo</string>
+    <string name="launcher_help">Ayuda</string>
+    <string name="launcher_controller">Mando</string>
+    <string name="launcher_hint_launch">Iniciar</string>
+    <string name="launcher_hint_resume">Reanudar</string>
+    <string name="launcher_hint_open">Abrir</string>
+    <string name="launcher_hint_pair">Vincular</string>
+    <string name="launcher_hint_options">Opciones</string>
+    <string name="launcher_hint_back">Atrás</string>
+    <string name="launcher_chip_running">En curso</string>
+    <string name="launcher_chip_online">En línea</string>
+    <string name="launcher_chip_in_game">En partida</string>
+    <string name="launcher_chip_offline">Sin conexión</string>
+    <string name="launcher_chip_unpaired">Sin vincular</string>
+    <string name="launcher_chip_checking">Comprobando…</string>
+    <string name="launcher_chip_hidden">Oculto</string>
+    <string name="launcher_searching">Buscando equipos en tu red…</string>
+    <string name="launcher_no_games">Este equipo no tiene juegos</string>
+    <string name="launcher_no_results">Sin resultados para “%1$s”</string>
+    <string name="launcher_filter">“%1$s”</string>
+    <string name="launcher_search_hint">Nombre del juego</string>
+    <string name="launcher_search_clear">Borrar</string>
+    <string name="launcher_select_paired_pc">Primero elige un equipo vinculado y en línea</string>
 </resources>

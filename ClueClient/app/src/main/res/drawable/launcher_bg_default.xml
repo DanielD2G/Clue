@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: launcher background when there is no cover art (PC list, empty library) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/clue_launcher_bg" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:type="radial"
+                android:gradientRadius="90%p"
+                android:centerX="0.25"
+                android:centerY="0.3"
+                android:startColor="#FF1C3550"
+                android:endColor="#000B0F14" />
+        </shape>
+    </item>
+</layer-list>
