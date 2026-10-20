@@ -407,6 +407,9 @@ public class MoonBridge {
 
     public static native void sendUtf8Text(String text);
 
+    // CLUE: Apollo server commands (Artemis). 0 = sent, -1 = send failed, -2 = host can't take it
+    public static native int sendExecServerCmd(int cmdId);
+
     public static native String getStageName(int stage);
 
     public static native String findExternalAddressIP4(String stunHostName, int stunPort);

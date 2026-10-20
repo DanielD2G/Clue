@@ -119,6 +119,12 @@ Java_com_limelight_nvstream_jni_MoonBridge_sendUtf8Text(JNIEnv *env, jclass claz
     (*env)->ReleaseStringUTFChars(env, text, utf8Text);
 }
 
+// CLUE: Apollo server commands, ported from Artemis (returns the LiSendExecServerCmd result)
+JNIEXPORT jint JNICALL
+Java_com_limelight_nvstream_jni_MoonBridge_sendExecServerCmd(JNIEnv *env, jclass clazz, jint cmdId) {
+    return LiSendExecServerCmd((uint8_t)cmdId);
+}
+
 JNIEXPORT void JNICALL
 Java_com_limelight_nvstream_jni_MoonBridge_stopConnection(JNIEnv *env, jclass clazz) {
     LiStopConnection();

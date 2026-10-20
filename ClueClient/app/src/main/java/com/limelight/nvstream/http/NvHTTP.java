@@ -280,6 +280,47 @@ public class NvHTTP {
     static String getXmlString(String str, String tagname, boolean throwIfMissing) throws XmlPullParserException, IOException {
         return getXmlString(new StringReader(str), tagname, throwIfMissing);
     }
+
+    // CLUE: from Artemis, collects every value of a repeated tag (Apollo's ServerCommand list)
+    static java.util.List<String> getXmlArray(Reader r, String tagname, boolean throwIfMissing) throws XmlPullParserException, IOException {
+        XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
+        factory.setNamespaceAware(true);
+        XmlPullParser xpp = factory.newPullParser();
+
+        xpp.setInput(r);
+        int eventType = xpp.getEventType();
+        Stack<String> currentTag = new Stack<>();
+
+        java.util.List<String> array = new java.util.ArrayList<>();
+
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            switch (eventType) {
+            case (XmlPullParser.START_TAG):
+                currentTag.push(xpp.getName());
+                break;
+            case (XmlPullParser.END_TAG):
+                currentTag.pop();
+                break;
+            case (XmlPullParser.TEXT):
+                // CLUE: guard against text outside any tag
+                if (!currentTag.isEmpty() && currentTag.peek().equals(tagname)) {
+                    array.add(xpp.getText());
+                }
+                break;
+            }
+            eventType = xpp.next();
+        }
+
+        if (throwIfMissing && array.isEmpty()) {
+            throw new XmlPullParserException("Missing mandatory field in host response: "+tagname);
+        }
+
+        return array;
+    }
+
+    static java.util.List<String> getXmlArray(String str, String tagname, boolean throwIfMissing) throws XmlPullParserException, IOException {
+        return getXmlArray(new StringReader(str), tagname, throwIfMissing);
+    }
     
     private static void verifyResponseStatus(XmlPullParser xpp) throws HostHttpResponseException {
         // We use Long.parseLong() because in rare cases GFE can send back a status code of
@@ -386,6 +427,9 @@ public class NvHTTP {
         // The MJOLNIR codename was used by GFE but never by any third-party server
         details.nvidiaServer = getXmlString(serverInfo, "state", true).contains("MJOLNIR");
 
+        // CLUE: Apollo lists the server commands this client may run (empty on Sunshine/GFE)
+        details.serverCommands = getServerCmds(serverInfo);
+
         // We could reach it so it's online
         details.state = ComputerDetails.State.ONLINE;
 
@@ -428,8 +472,14 @@ public class NvHTTP {
     // The initial pair query does require outside action (user entering a PIN) but subsequent pairing
     // queries do not.
     private ResponseBody openHttpConnection(OkHttpClient client, HttpUrl baseUrl, String path, String query) throws IOException {
+        return openHttpConnection(client, baseUrl, path, query, null); // CLUE
+    }
+
+    // CLUE: from Artemis, a request body turns the query into a POST (Apollo's clipboard upload)
+    private ResponseBody openHttpConnection(OkHttpClient client, HttpUrl baseUrl, String path, String query, okhttp3.RequestBody requestBody) throws IOException {
         HttpUrl completeUrl = getCompleteUrl(baseUrl, path, query);
-        Request request = new Request.Builder().url(completeUrl).get().build();
+        Request.Builder builder = new Request.Builder().url(completeUrl);
+        Request request = requestBody == null ? builder.get().build() : builder.post(requestBody).build();
         Response response = performAndroidTlsHack(client).newCall(request).execute();
 
         ResponseBody body = response.body();
@@ -456,8 +506,12 @@ public class NvHTTP {
     }
 
     private String openHttpConnectionToString(OkHttpClient client, HttpUrl baseUrl, String path, String query) throws IOException {
+        return openHttpConnectionToString(client, baseUrl, path, query, null); // CLUE
+    }
+
+    private String openHttpConnectionToString(OkHttpClient client, HttpUrl baseUrl, String path, String query, okhttp3.RequestBody requestBody) throws IOException {
         try {
-            ResponseBody resp = openHttpConnection(client, baseUrl, path, query);
+            ResponseBody resp = openHttpConnection(client, baseUrl, path, query, requestBody); // CLUE: + requestBody
             String respString = resp.string();
             resp.close();
 
@@ -816,5 +870,36 @@ public class NvHTTP {
         }
 
         return true;
+    }
+
+    // CLUE: Apollo extensions below, ported from Artemis' NvHTTP.
+
+    public java.util.List<String> getServerCmds(String serverInfo) throws XmlPullParserException, IOException {
+        return getXmlArray(serverInfo, "ServerCommand", false);
+    }
+
+    public String getClipboard() throws IOException, XmlPullParserException {
+        // Add type for future-proof
+        // Might return arbitrary type from host if not set
+        String resp = openHttpConnectionToString(httpClientLongConnectTimeout, getHttpsUrl(true), "actions/clipboard", "type=text");
+        // CLUE: hosts without the endpoint answer with an XML status (possibly with HTTP 200);
+        // getXmlString() throws HostHttpResponseException for its non-200 status_code instead of
+        // letting that XML end up in the local clipboard.
+        if (com.clue.menu.ClipboardResponse.looksLikeHostStatus(resp)) {
+            getXmlString(resp, "root", false);
+        }
+        return resp;
+    }
+
+    // We currently only support plain text
+    public Boolean sendClipboard(String content) throws IOException {
+        String resp = openHttpConnectionToString(httpClientLongConnectTimeout, getHttpsUrl(true), "actions/clipboard", "type=text",
+                okhttp3.RequestBody.create(content, okhttp3.MediaType.parse("text/plain")));
+        // For handling the 200ed 404 from Sunshine
+        if (resp.isEmpty()) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }

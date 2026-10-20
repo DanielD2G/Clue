@@ -222,6 +222,27 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     public static final String EXTRA_APP_HDR = "HDR";
     public static final String EXTRA_SERVER_CERT = "ServerCert";
 
+    // CLUE: game menu and Apollo extensions, ported from Artemis' Game
+    public static final String EXTRA_SERVER_COMMANDS = "ServerCommands";
+
+    public static final String CLIPBOARD_IDENTIFIER = "ClueStreaming"; // Artemis: "ArtemisStreaming"
+
+    public interface GameMenuCallbacks {
+        void showMenu(com.limelight.binding.input.GameInputDevice device);
+        void hideMenu();
+        boolean isMenuOpen();
+    }
+
+    public GameMenuCallbacks gameMenuCallbacks;
+
+
+    private boolean quitOnStop = false;
+    private NvHTTP httpConn;
+    private java.util.ArrayList<String> serverCommands;
+    private android.content.ClipboardManager clipboardManager;
+    private volatile boolean clipboardSyncRunning = false;
+    // CLUE end
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -369,6 +390,17 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         } catch (CertificateException e) {
             e.printStackTrace();
+        }
+
+        // CLUE: the game menu talks to the host over HTTPS (clipboard, quit), as in Artemis
+        clipboardManager = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        serverCommands = Game.this.getIntent().getStringArrayListExtra(EXTRA_SERVER_COMMANDS);
+        if (serverCert != null) {
+            try {
+                httpConn = new NvHTTP(new ComputerDetails.AddressTuple(host, port), httpsPort, uniqueId, serverCert, PlatformBinding.getCryptoProvider(this));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         if (appId == StreamConfiguration.INVALID_APP_ID) {
@@ -570,6 +602,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             return;
         }
 
+        gameMenuCallbacks = new GameMenu(this); // CLUE: game menu (Artemis)
+
         // The connection will be started when the surface gets created
         streamView.getHolder().addCallback(this);
     }
@@ -633,6 +667,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 if (virtualController != null) {
                     virtualController.hide();
                 }
+
+                hideGameMenu(); // CLUE (Artemis)
 
                 performanceOverlayView.setVisibility(View.GONE);
                 notificationOverlayView.setVisibility(View.GONE);
@@ -2141,11 +2177,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                                 toggleKeyboard();
                                 return true;
                             } else if (currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                                // CLUE: TODO call Artemis Game.toggleFullKeyboard() once the full keyboard is ported
+                                toggleFullKeyboard(); // CLUE: as Artemis (still a stub until the full keyboard is ported)
                                 return true;
                             } else if (currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
-                                // CLUE: TODO call Artemis Game.showGameMenu(null), gated by
-                                // prefConfig.enableBackMenu, once the game menu is ported
+                                if (prefConfig.enableBackMenu) { // CLUE: as Artemis
+                                    showGameMenu(null);
+                                }
                                 return true;
                             }
                         }
@@ -2237,12 +2274,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             case MotionEvent.ACTION_UP:
                 long currentEventTime = event.getEventTime();
                 if (pointerCount >= 5 && fiveFingerDownTime > 0 && currentEventTime - fiveFingerDownTime < FIVE_FINGER_TAP_THRESHOLD) {
-                    // CLUE: TODO call Artemis Game.showGameMenu(null), gated by
-                    // prefConfig.enableBackMenu, once the game menu is ported
+                    if (prefConfig.enableBackMenu) { // CLUE: as Artemis
+                        showGameMenu(null);
+                    }
                     fiveFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 4 && fourFingerDownTime > 0 && currentEventTime - fourFingerDownTime < FOUR_FINGER_TAP_THRESHOLD) {
-                    // CLUE: TODO call Artemis Game.toggleFullKeyboard() once the full keyboard is ported
+                    toggleFullKeyboard(); // CLUE: as Artemis (still a stub until the full keyboard is ported)
                     fourFingerDownTime = 0;
                     break;
                 } else if (pointerCount == 3 && threeFingerDownTime > 0 && currentEventTime - threeFingerDownTime < THREE_FINGER_TAP_THRESHOLD) {
@@ -2502,6 +2540,21 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             new Thread() {
                 public void run() {
                     conn.stop();
+                    // CLUE: "Quit session" from the game menu quits the app once the stream
+                    // is down (Artemis)
+                    if (httpConn != null && quitOnStop) {
+                        try {
+                            sleep(1000);
+                            final String msg = httpConn.quitApp() ?
+                                    getResources().getString(R.string.applist_quit_success) + " " + appName :
+                                    getResources().getString(R.string.applist_quit_fail) + " " + appName;
+                            Game.this.runOnUiThread(() -> Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show());
+                        } catch (Exception e) {
+                            final String msg = e.getMessage() != null ? e.getMessage() :
+                                    getResources().getString(R.string.applist_quit_fail) + " " + appName;
+                            Game.this.runOnUiThread(() -> Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show());
+                        }
+                    }
                 }
             }.start();
         }
@@ -2692,6 +2745,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 // Update GameManager state to indicate we're in game
                 UiHelper.notifyStreamConnected(Game.this);
+
+                // CLUE: Sync local clipboard to host (Artemis smart clipboard sync)
+                handleFocusChange(true);
 
                 hideSystemUi(1000);
 
@@ -2977,5 +3033,328 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             default:
                 return false;
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // CLUE: game menu, ported from Artemis' Game (ClassicOldSong/moonlight-android, GPL-3.0).
+    // Method names match Artemis so the features still missing can be ported on top.
+    // ---------------------------------------------------------------------------------------
+
+    @Override
+    public void onBackPressed() {
+        if (prefConfig != null && prefConfig.enableBackMenu && gameMenuCallbacks != null) {
+            showGameMenu(null);
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
+    public void showGameMenu(com.limelight.binding.input.GameInputDevice device) {
+        if (gameMenuCallbacks != null) {
+            gameMenuCallbacks.showMenu(device);
+        }
+    }
+
+    public void hideGameMenu() {
+        if (gameMenuCallbacks != null) {
+            gameMenuCallbacks.hideMenu();
+        }
+    }
+
+    // Clue has no external-display mode yet; Artemis' menu checks it
+    public boolean isOnExternalDisplay() {
+        return false;
+    }
+
+    public void sendKeys(short[] keys) {
+        final byte[] modifier = {(byte) 0};
+
+        for (short key : keys) {
+            conn.sendKeyboardInput(key, KeyboardPacket.KEY_DOWN, modifier[0], (byte) 0);
+
+            // Apply the modifier of the pressed key, e.g. CTRL first issues a CTRL event (without
+            // modifier) and then sends the following keys with the CTRL modifier applied
+            modifier[0] |= KeyboardTranslator.getModifier(key);
+        }
+
+        new Handler(android.os.Looper.getMainLooper()).postDelayed((() -> {
+            for (int pos = keys.length - 1; pos >= 0; pos--) {
+                short key = keys[pos];
+
+                // Remove the keys modifier before releasing the key
+                modifier[0] &= (byte) ~KeyboardTranslator.getModifier(key);
+
+                conn.sendKeyboardInput(key, KeyboardPacket.KEY_UP, modifier[0], (byte) 0);
+            }
+        }), GameMenu.KEY_UP_DELAY);
+    }
+
+    public void disconnect() {
+        if (prefConfig.smartClipboardSync) {
+            getClipboard(-1);
+        }
+        finish();
+    }
+
+    public void quit() {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        builder.setTitle(R.string.game_dialog_title_quit_confirm);
+        builder.setMessage(R.string.game_dialog_message_quit_confirm);
+
+        builder.setPositiveButton(getString(R.string.yes), (dialog, which) -> {
+            quitOnStop = true;
+            dialog.dismiss();
+            finish();
+        });
+
+        builder.setNegativeButton(getString(R.string.no), (dialog, which) -> dialog.dismiss());
+
+        android.app.AlertDialog dialog = builder.create();
+        dialog.show();
+    }
+
+    public void sendExecServerCmd(int cmdId) {
+        // CLUE: Artemis ignores the result; we tell the user when the host can't take it
+        if (!connected || !conn.sendExecServerCmd(cmdId)) {
+            Toast.makeText(this, getString(R.string.game_menu_server_cmd_failed), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public java.util.ArrayList<String> getServerCmds() {
+        return serverCommands;
+    }
+
+    // Smart clipboard sync: upload when the stream starts, download when disconnecting
+    public boolean handleFocusChange(boolean hasFocus) {
+        if (connected && prefConfig.smartClipboardSync) {
+            if (hasFocus) {
+                return sendClipboard(false);
+            } else {
+                return getClipboard(0);
+            }
+        }
+
+        return false;
+    }
+
+    // Method to get clipboard content
+    private String getClipboardContent(boolean force) {
+        // Check if there is any clipboard data
+        if (clipboardManager != null && clipboardManager.hasPrimaryClip()) {
+            android.content.ClipDescription clipDescription = clipboardManager.getPrimaryClipDescription();
+            if (!force && clipDescription != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    android.os.PersistableBundle extras = clipDescription.getExtras();
+                    if (extras != null && extras.getBoolean(CLIPBOARD_IDENTIFIER)) {
+                        // We're getting the clipboard data we just set/read a while ago
+                        return null;
+                    }
+                } else {
+                    CharSequence clipLabel = clipDescription.getLabel();
+                    if (clipLabel != null && clipLabel.equals(CLIPBOARD_IDENTIFIER)) {
+                        // We're getting the clipboard data we set a while ago
+                        return null;
+                    }
+                }
+            }
+
+            android.content.ClipData clipData = clipboardManager.getPrimaryClip();
+
+            if (clipData != null && clipData.getItemCount() > 0) {
+                // Get the first item from the clipboard data
+                android.content.ClipData.Item item = clipData.getItemAt(0);
+
+                // Mark the clip as visited
+                if (clipDescription != null) {
+                    android.content.ClipData clonedClip = cloneClipData(clipDescription, item);
+                    clipboardManager.setPrimaryClip(clonedClip);
+                }
+
+                // Get the text data from the clipboard item
+                CharSequence clipText = item.getText();
+                if (clipText == null) {
+                    return  null;
+                }
+                return clipText.toString();
+            }
+        }
+
+        return null;
+    }
+
+    private static android.content.ClipData cloneClipData(android.content.ClipDescription clipDescription, android.content.ClipData.Item item) {
+        android.content.ClipDescription clonedDescription = new android.content.ClipDescription(clipDescription);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            android.os.PersistableBundle extras = clipDescription.getExtras();
+            if (extras == null) {
+                extras = new android.os.PersistableBundle();
+            }
+            extras.putBoolean(CLIPBOARD_IDENTIFIER, true);
+            clonedDescription.setExtras(extras);
+        }
+
+        return new android.content.ClipData(clonedDescription, item);
+    }
+
+    // CLUE: hosts without Apollo's clipboard endpoint (plain Sunshine) answer 404
+    private static boolean isClipboardUnsupported(Exception e) {
+        return e instanceof java.io.FileNotFoundException ||
+                (e instanceof com.limelight.nvstream.http.HostHttpResponseException &&
+                        ((com.limelight.nvstream.http.HostHttpResponseException) e).getErrorCode() == 404);
+    }
+
+    public boolean sendClipboard(boolean force) {
+        if (httpConn == null) {
+            LimeLog.warning("httpConn not ready, cannot send clipboard!");
+            return false;
+        }
+
+        String clipboardText = getClipboardContent(force);
+        if (clipboardText != null) {
+            new Thread() {
+                public void run() {
+                    try {
+                        if (!httpConn.sendClipboard(clipboardText)) {
+                            if (prefConfig.smartClipboardSyncToast) {
+                                Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.clipboard_sync_unsupported), Toast.LENGTH_SHORT).show());
+                            }
+                        } else {
+                            if (prefConfig.smartClipboardSyncToast) {
+                                Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.send_clipboard_success), Toast.LENGTH_SHORT).show());
+                            }
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        if (prefConfig.smartClipboardSyncToast) {
+                            final String msg = isClipboardUnsupported(e) ? getString(R.string.clipboard_sync_unsupported) :
+                                    getString(R.string.send_clipboard_failed) + e.getMessage();
+                            Game.this.runOnUiThread(() -> Toast.makeText(Game.this, msg, Toast.LENGTH_SHORT).show());
+                        }
+                    }
+                }
+            }.start();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public boolean getClipboard(int delay) {
+        if (httpConn == null) {
+            LimeLog.warning("httpConn not ready, cannot get clipboard!");
+            return false;
+        }
+
+        if (delay == 0 && gameMenuCallbacks != null && gameMenuCallbacks.isMenuOpen()) {
+            return false;
+        }
+
+        new Thread() {
+            public void run() {
+                if (clipboardSyncRunning) {
+                    return;
+                }
+
+                clipboardSyncRunning = true;
+                try {
+                    if (delay > 0) {
+                        sleep(delay);
+                    }
+                    String clipboardContent = httpConn.getClipboard();
+                    android.content.ClipData clipData = android.content.ClipData.newPlainText(CLIPBOARD_IDENTIFIER, clipboardContent);
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        android.content.ClipDescription clipDescription = clipData.getDescription();
+                        android.os.PersistableBundle newExtras = new android.os.PersistableBundle();
+                        newExtras.putBoolean(CLIPBOARD_IDENTIFIER, true);
+                        if (prefConfig.hideClipboardContent) {
+                            // We don't know if the message is sensitive or not, to be safe mark them all as sensitive.
+                            newExtras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+                        }
+                        clipDescription.setExtras(newExtras);
+                    }
+
+                    clipboardManager.setPrimaryClip(clipData);
+                    if (prefConfig.smartClipboardSyncToast) {
+                        Game.this.runOnUiThread(() -> Toast.makeText(Game.this, getString(R.string.get_clipboard_success), Toast.LENGTH_SHORT).show());
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    if (prefConfig.smartClipboardSyncToast) {
+                        final String msg = isClipboardUnsupported(e) ? getString(R.string.clipboard_sync_unsupported) :
+                                getString(R.string.get_clipboard_failed) + e.getMessage();
+                        Game.this.runOnUiThread(() -> Toast.makeText(Game.this, msg, Toast.LENGTH_SHORT).show());
+                    }
+                }
+                clipboardSyncRunning = false;
+            }
+        }.start();
+
+        return true;
+    }
+
+    public void toggleHUD() {
+        prefConfig.enablePerfOverlay = !prefConfig.enablePerfOverlay;
+        if (prefConfig.enablePerfOverlay) {
+            performanceOverlayView.setVisibility(View.VISIBLE);
+        } else {
+            performanceOverlayView.setVisibility(View.GONE);
+        }
+    }
+
+    // Show/hide the on-screen virtual controller
+    public void toggleVirtualController() {
+        if (virtualController == null) {
+            virtualController = new VirtualController(controllerHandler,
+                    (FrameLayout)streamView.getParent(),
+                    this);
+            virtualController.refreshLayout();
+            virtualController.show();
+            prefConfig.onscreenController = true;
+            return;
+        }
+        prefConfig.onscreenController = virtualController.switchShowHide() != 0;
+    }
+
+
+    private void clueComingSoon() {
+        Toast.makeText(this, getString(R.string.game_menu_coming_soon), Toast.LENGTH_SHORT).show();
+    }
+
+    // CLUE: TODO port from Artemis (pan/zoom mode)
+    public boolean isZoomModeEnabled() {
+        return false;
+    }
+
+    // CLUE: TODO port from Artemis (pan/zoom mode)
+    public void toggleZoomMode() {
+        clueComingSoon();
+    }
+
+    // CLUE: TODO port from Artemis (rotate screen)
+    public void rotateScreen() {
+        clueComingSoon();
+    }
+
+    // CLUE: TODO port from Artemis (floating menu button)
+    public void toggleFloatingButtonVisibility() {
+        clueComingSoon();
+    }
+
+    // CLUE: TODO port from Artemis (on-screen special keys, KeyBoardController)
+    public void toggleKeyboardController() {
+        clueComingSoon();
+    }
+
+    // CLUE: TODO port from Artemis (on-screen full keyboard, KeyBoardLayoutController)
+    public void toggleFullKeyboard() {
+        clueComingSoon();
+    }
+
+    // CLUE: TODO port from Artemis (touch sensitivity)
+    public void switchTouchSensitivity() {
+        clueComingSoon();
     }
 }

@@ -77,6 +77,9 @@ public class ComputerDetails {
     public String rawAppList;
     public boolean nvidiaServer;
 
+    // CLUE: Apollo server commands (from Artemis); null or empty on Sunshine/GFE
+    public java.util.List<String> serverCommands;
+
     public ComputerDetails() {
         // Use defaults
         state = State.UNKNOWN;
@@ -146,6 +149,7 @@ public class ComputerDetails {
         this.runningGameId = details.runningGameId;
         this.nvidiaServer = details.nvidiaServer;
         this.rawAppList = details.rawAppList;
+        this.serverCommands = details.serverCommands; // CLUE
     }
 
     @Override

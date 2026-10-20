@@ -597,6 +597,14 @@ public class NvConnection {
         }
     }
 
+    // CLUE: Apollo server commands, ported from Artemis. Returns false if the host can't take it.
+    public boolean sendExecServerCmd(final int cmdId) {
+        if (!isMonkey) {
+            return MoonBridge.sendExecServerCmd(cmdId) == 0;
+        }
+        return false;
+    }
+
     public static String findExternalAddressForMdns(String stunHostname, int stunPort) {
         return MoonBridge.findExternalAddressIP4(stunHostname, stunPort);
     }
