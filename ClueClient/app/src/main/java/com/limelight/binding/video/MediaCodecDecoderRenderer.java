@@ -112,6 +112,12 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     // merged once a second, so a read from another thread could double count a window; these
     // only ever grow, each written by the thread that already updates its VideoStats twin.
     private volatile int clueFramesReceived, clueFramesLost, clueFramesRendered;
+    private volatile long clueBytesReceived; // CLUE: video payload bytes, for the tuner's received bitrate
+
+    /** CLUE: video payload bytes received since the decoder started. */
+    public long clueBytesReceived() {
+        return clueBytesReceived;
+    }
 
     /** CLUE: frames received, lost and rendered since the decoder started (off the hot path). */
     public void clueStatsSnapshot(int[] out) {
@@ -1749,6 +1755,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             // Don't bother if we're stopping
             return MoonBridge.DR_OK;
         }
+        clueBytesReceived += decodeUnitLength; // CLUE: tuner received bitrate (single writer)
 
         if (lastFrameNumber == 0) {
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();

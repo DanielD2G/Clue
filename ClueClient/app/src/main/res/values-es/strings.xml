@@ -420,6 +420,7 @@
     <string name="tuner_reason_decode">decodificador lento (p95 %1$s)</string>
     <string name="tuner_reason_unpresented">cuadros no mostrados %1$s</string>
     <string name="tuner_reason_rtt">subió la latencia (p95 %1$s)</string>
+    <string name="tuner_reason_throughput">no llegó al bitrate pedido (%1$s)</string>
     <string name="tuner_pc_offline">El PC está apagado o no responde.</string>
     <string name="tuner_no_app_title">Falta la app de prueba</string>
     <string name="tuner_no_app_msg">El PC no tiene la app \"Clue Bitrate Test\". En el PC, ejecuta una vez tools\\host\\install-bitrate-test.ps1 del repositorio de Clue (pide permisos de administrador) y vuelve a correr la prueba.\n\nClue no sugiere un bitrate medido sobre contenido común: con el escritorio quieto el encoder casi no trabaja.</string>

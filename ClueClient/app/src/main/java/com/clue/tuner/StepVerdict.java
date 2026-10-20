@@ -5,11 +5,13 @@ import java.util.Locale;
 /**
  * Decides whether a tuner step was stable. All criteria from the spec must hold:
  * network loss < 0.5 %, decode p95 <= 2 frame periods, not presented < 2 %,
- * RTT p95 <= first-step RTT p95 + 15 ms, received fps >= 90 % of target.
+ * RTT p95 <= first-step RTT p95 + 15 ms, received fps >= 90 % of target, and the received
+ * video payload reaches 65 % of the requested bitrate (the host spends ~20 % on FEC; less
+ * means the host or encoder capped it).
  * Ratio checks use integer cross-multiplication so the borders are exact.
  */
 public final class StepVerdict {
-    public enum Reason { OK, INTERRUPTED, NO_FRAMES, LOSS, FPS, DECODE, UNPRESENTED, RTT }
+    public enum Reason { OK, INTERRUPTED, NO_FRAMES, LOSS, FPS, DECODE, UNPRESENTED, RTT, THROUGHPUT }
 
     public static final class Result {
         public final boolean stable;
@@ -54,6 +56,12 @@ public final class StepVerdict {
         long unpresented = Math.max(0, recv - m.framesPresented);
         if (unpresented * 100 >= recv * 2) {
             return new Result(Reason.UNPRESENTED, pct(unpresented, recv));
+        }
+        // received >= 65 % of requested: the stream really carried this bitrate. Sunshine-family
+        // hosts spend ~20 % of the requested bitrate on FEC, which is not counted here, so a full
+        // stream delivers ~80 % as video payload; 65 % leaves room for encoder rate control.
+        if (m.receivedKbps >= 0 && m.receivedKbps * 100 < (double) m.requestedKbps * 65) {
+            return new Result(Reason.THROUGHPUT, String.format(Locale.ROOT, "%.0f/%d kbps", m.receivedKbps, m.requestedKbps));
         }
         if (baselineRttP95Ms >= 0 && m.rttP95Ms > baselineRttP95Ms + RTT_MARGIN_MS) {
             return new Result(Reason.RTT, String.format(Locale.ROOT, "%.0f ms", m.rttP95Ms));

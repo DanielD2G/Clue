@@ -439,6 +439,7 @@
     <string name="tuner_reason_decode">decoder too slow (p95 %1$s)</string>
     <string name="tuner_reason_unpresented">frames not shown %1$s</string>
     <string name="tuner_reason_rtt">latency rose (p95 %1$s)</string>
+    <string name="tuner_reason_throughput">bitrate not reached (%1$s)</string>
     <string name="tuner_pc_offline">The PC is offline or unreachable.</string>
     <string name="tuner_no_app_title">Test app not installed</string>
     <string name="tuner_no_app_msg">The PC has no \"Clue Bitrate Test\" app. On the PC, run tools\\host\\install-bitrate-test.ps1 from the Clue repository once (it asks for administrator rights), then run the test again.\n\nClue won\'t suggest a bitrate measured on ordinary content: the encoder barely works on a still desktop.</string>

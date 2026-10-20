@@ -272,11 +272,21 @@ public class BitrateTunerActivity extends Activity {
         }
         search.report(currentKbps, v.stable);
         addRow(currentKbps, v);
-        LimeLog.info(String.format(Locale.ROOT, "Clue tuner: %d kbps %s %s (recv %d lost %d pres %d fps %.1f dec %.1f rtt %.0f)",
+        LimeLog.info(String.format(Locale.ROOT, "Clue tuner: %d kbps %s %s (recv %d lost %d pres %d fps %.1f dec %.1f rtt %.0f rx %.0f kbps)",
                 currentKbps, v.code, v.reason, m.framesReceived, m.framesLost, m.framesPresented,
-                m.fpsReceived, m.decodeP95Ms, m.rttP95Ms));
+                m.fpsReceived, m.decodeP95Ms, m.rttP95Ms, m.receivedKbps));
 
-        handler.postDelayed(this::nextStep, STEP_GAP_MS);
+        // Each step starts the test app fresh: a resumed session kept the stream at a fixed
+        // ~12 Mbps whatever bitrate was asked (measured on Vibepollo 2.0.1), so quit it first.
+        new Thread(() -> {
+            try {
+                Thread.sleep(1000); // let Game's disconnect reach the host
+                LimeLog.info("Clue tuner: quit between steps " + (newHttp().quitApp() ? "ok" : "failed"));
+            } catch (Exception e) {
+                LimeLog.warning("Clue tuner: quit between steps failed: " + e);
+            }
+            handler.postDelayed(this::nextStep, STEP_GAP_MS);
+        }, "Clue tuner step gap").start();
     }
 
     private void addRow(int kbps, StepVerdict.Result v) {
@@ -311,6 +321,7 @@ public class BitrateTunerActivity extends Activity {
             case DECODE: return getString(R.string.tuner_reason_decode, v.reason);
             case UNPRESENTED: return getString(R.string.tuner_reason_unpresented, v.reason);
             case RTT: return getString(R.string.tuner_reason_rtt, v.reason);
+            case THROUGHPUT: return getString(R.string.tuner_reason_throughput, v.reason);
             default: return v.reason;
         }
     }

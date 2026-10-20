@@ -19,6 +19,7 @@ public class StepVerdictTest {
         m.fpsReceived = 120;
         m.decodeP95Ms = 5;
         m.rttP95Ms = 5;
+        m.receivedKbps = 50000;
         m.interrupted = false;
         return m;
     }
@@ -138,5 +139,28 @@ public class StepVerdictTest {
         StepVerdict.Result r = eval(m);
         assertFalse(r.stable);
         assertEquals(StepVerdict.Reason.NO_FRAMES, r.code);
+    }
+
+    @Test
+    public void receivedBelow65PercentOfRequestedIsUnstable() {
+        StepMetrics m = good();
+        m.receivedKbps = 32499;
+        StepVerdict.Result r = eval(m);
+        assertFalse(r.stable);
+        assertEquals(StepVerdict.Reason.THROUGHPUT, r.code);
+    }
+
+    @Test
+    public void receivedAt65PercentOfRequestedIsStable() {
+        StepMetrics m = good();
+        m.receivedKbps = 32500;
+        assertTrue(eval(m).stable);
+    }
+
+    @Test
+    public void unknownReceivedBitrateSkipsTheThroughputCheck() {
+        StepMetrics m = good();
+        m.receivedKbps = -1;
+        assertTrue(eval(m).stable);
     }
 }

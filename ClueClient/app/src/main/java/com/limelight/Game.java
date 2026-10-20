@@ -253,6 +253,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean clueTuneDone;
     private com.clue.tuner.StepCollector clueTuneCollector;
     private final int[] clueTuneCounters = new int[3];
+    private long clueTuneBytes0, clueTuneBeginNs;
     private final Handler clueTuneHandler = new Handler(android.os.Looper.getMainLooper());
     private final Runnable clueTuneRttSampler = new Runnable() {
         @Override
@@ -301,6 +302,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
             decoderRenderer.clueStatsSnapshot(clueTuneCounters);
             clueTuneCollector.begin(System.nanoTime(), clueTuneCounters[0], clueTuneCounters[1], clueTuneCounters[2]);
+            clueTuneBytes0 = decoderRenderer.clueBytesReceived();
+            clueTuneBeginNs = System.nanoTime();
             clueTuneRttSampler.run();
             clueTuneHandler.postDelayed(this::clueTuneFinishMeasured, clueTuneMeasureMs);
         }, clueTuneWarmupMs);
@@ -316,6 +319,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 clueTuneCounters[0], clueTuneCounters[1], clueTuneCounters[2],
                 ft, clueTuneKbps, prefConfig.fps);
         m.decoderMaxKbps = decoderRenderer.clueActiveDecoderMaxKbps();
+        double clueTuneSeconds = (System.nanoTime() - clueTuneBeginNs) / 1e9;
+        if (clueTuneSeconds > 0) {
+            m.receivedKbps = (decoderRenderer.clueBytesReceived() - clueTuneBytes0) * 8 / 1000.0 / clueTuneSeconds;
+        }
         clueTuneFinish(m);
     }
 
