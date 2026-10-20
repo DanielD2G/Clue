@@ -84,7 +84,12 @@ public class ServerHelper {
             Toast.makeText(parent, parent.getResources().getString(R.string.pair_pc_offline), Toast.LENGTH_SHORT).show();
             return;
         }
-        parent.startActivity(createStartIntent(parent, app, computer, managerBinder));
+        // CLUE: first launch to this PC on this network offers the bitrate tuner
+        final Intent start = createStartIntent(parent, app, computer, managerBinder);
+        if (com.clue.tuner.TunerOffer.maybeOffer(parent, computer, () -> parent.startActivity(start))) {
+            return;
+        }
+        parent.startActivity(start);
     }
 
     public static void doNetworkTest(final Activity parent) {
