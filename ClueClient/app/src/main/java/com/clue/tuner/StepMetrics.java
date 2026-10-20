@@ -16,6 +16,8 @@ public final class StepMetrics {
     public double decodeP95Ms;
     public double rttP95Ms;
     public boolean interrupted;
+    /** Bitrate ceiling the active decoder declares for the codec in use (kbps), 0 if unknown. */
+    public int decoderMaxKbps;
 
     private static final String P = "clue_tune_res_";
 
@@ -29,6 +31,7 @@ public final class StepMetrics {
         i.putExtra(P + "dec", decodeP95Ms);
         i.putExtra(P + "rtt", rttP95Ms);
         i.putExtra(P + "int", interrupted);
+        i.putExtra(P + "decmax", decoderMaxKbps);
     }
 
     /** Reads a result Intent; a missing or foreign Intent reads as an interrupted step. */
@@ -47,6 +50,7 @@ public final class StepMetrics {
         m.decodeP95Ms = i.getDoubleExtra(P + "dec", 0);
         m.rttP95Ms = i.getDoubleExtra(P + "rtt", 0);
         m.interrupted = i.getBooleanExtra(P + "int", true);
+        m.decoderMaxKbps = i.getIntExtra(P + "decmax", 0);
         return m;
     }
 }

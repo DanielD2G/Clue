@@ -243,6 +243,104 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private volatile boolean clipboardSyncRunning = false;
     // CLUE end
 
+    // CLUE: bitrate tuner test mode (com.clue.tuner.BitrateTunerActivity). One step = one session
+    // at a given bitrate: warm-up, measurement, then the metrics go back as the activity result.
+    public static final String EXTRA_TUNE_KBPS = "clue_tune_kbps";
+    public static final String EXTRA_TUNE_WARMUP_MS = "clue_tune_warmup_ms";
+    public static final String EXTRA_TUNE_MEASURE_MS = "clue_tune_measure_ms";
+    private int clueTuneKbps; // > 0 in test mode
+    private int clueTuneWarmupMs, clueTuneMeasureMs;
+    private boolean clueTuneDone;
+    private com.clue.tuner.StepCollector clueTuneCollector;
+    private final int[] clueTuneCounters = new int[3];
+    private final Handler clueTuneHandler = new Handler(android.os.Looper.getMainLooper());
+    private final Runnable clueTuneRttSampler = new Runnable() {
+        @Override
+        public void run() {
+            if (clueTuneDone || clueTuneCollector == null) {
+                return;
+            }
+            clueTuneCollector.addRtt((int) (MoonBridge.getEstimatedRttInfo() >> 32));
+            clueTuneHandler.postDelayed(this, 100);
+        }
+    };
+
+    /** onCreate, right after the preferences are read: per-session overrides, never saved. */
+    private void clueTuneReadExtras() {
+        clueTuneKbps = getIntent().getIntExtra(EXTRA_TUNE_KBPS, 0);
+        if (clueTuneKbps <= 0) {
+            return;
+        }
+        clueTuneWarmupMs = getIntent().getIntExtra(EXTRA_TUNE_WARMUP_MS, 4000);
+        clueTuneMeasureMs = getIntent().getIntExtra(EXTRA_TUNE_MEASURE_MS, 12000);
+        prefConfig.bitrate = clueTuneKbps;
+        prefConfig.enablePerfOverlay = false;
+        prefConfig.enableLatencyToast = false;
+        prefConfig.enablePip = false;
+        prefConfig.enableBackMenu = false; // back cancels the whole test
+        prefConfig.disableWarnings = true;
+        // 1 RTT sample per 100 ms; frames sized for 240 fps
+        int seconds = clueTuneMeasureMs / 1000 + 2;
+        clueTuneCollector = new com.clue.tuner.StepCollector(seconds * 10, seconds * 240);
+        // Watchdog: a step that never connects or stalls counts as interrupted
+        clueTuneHandler.postDelayed(this::clueTuneFinishInterrupted,
+                clueTuneWarmupMs + clueTuneMeasureMs + 30000);
+        LimeLog.info("Clue tuner step at " + clueTuneKbps + " kbps");
+    }
+
+    /** connectionStarted (UI thread): schedule the measurement window. */
+    private void clueTuneOnConnected() {
+        if (clueTuneKbps <= 0) {
+            return;
+        }
+        clueTuneHandler.postDelayed(() -> {
+            if (clueTuneDone) {
+                return;
+            }
+            decoderRenderer.clueStatsSnapshot(clueTuneCounters);
+            clueTuneCollector.begin(System.nanoTime(), clueTuneCounters[0], clueTuneCounters[1], clueTuneCounters[2]);
+            clueTuneRttSampler.run();
+            clueTuneHandler.postDelayed(this::clueTuneFinishMeasured, clueTuneMeasureMs);
+        }, clueTuneWarmupMs);
+    }
+
+    private void clueTuneFinishMeasured() {
+        if (clueTuneDone) {
+            return;
+        }
+        decoderRenderer.clueStatsSnapshot(clueTuneCounters);
+        com.clue.trace.FrameTrace ft = clueTraceSession != null ? clueTraceSession.frames() : null;
+        com.clue.tuner.StepMetrics m = clueTuneCollector.end(System.nanoTime(),
+                clueTuneCounters[0], clueTuneCounters[1], clueTuneCounters[2],
+                ft, clueTuneKbps, prefConfig.fps);
+        m.decoderMaxKbps = decoderRenderer.clueActiveDecoderMaxKbps();
+        clueTuneFinish(m);
+    }
+
+    /** The session ended or never started before the measurement was complete. */
+    private void clueTuneFinishInterrupted() {
+        if (clueTuneDone) {
+            return;
+        }
+        clueTuneFinish(com.clue.tuner.StepCollector.interrupted(clueTuneKbps));
+    }
+
+    private void clueTuneFinish(com.clue.tuner.StepMetrics m) {
+        clueTuneDone = true;
+        clueTuneHandler.removeCallbacksAndMessages(null);
+        LimeLog.info("Clue tuner step " + clueTuneKbps + " kbps: recv=" + m.framesReceived
+                + " lost=" + m.framesLost + " presented=" + m.framesPresented
+                + " fps=" + m.fpsReceived + " decodeP95=" + m.decodeP95Ms
+                + " rttP95=" + m.rttP95Ms + " interrupted=" + m.interrupted);
+        Intent result = new Intent();
+        m.writeTo(result);
+        setResult(RESULT_OK, result);
+        // Disconnects in onStop() without quitting the host app (the next step resumes it)
+        displayedFailureDialog = true;
+        finish();
+    }
+    // CLUE end (tuner)
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -279,6 +377,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Read the stream preferences
         prefConfig = PreferenceConfiguration.readPreferences(this);
+        clueTuneReadExtras(); // CLUE: bitrate tuner step overrides
         tombstonePrefs = Game.this.getSharedPreferences("DecoderTombstone", 0);
 
         // Enter landscape unless we're on a square screen
@@ -1110,6 +1209,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        clueTuneHandler.removeCallbacksAndMessages(null); // CLUE: tuner timers
 
         if (controllerHandler != null) {
             controllerHandler.destroy();
@@ -2525,7 +2625,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 cluePhotonTest = null;
             }
             if (clueTraceSession != null) {
-                clueTraceSession.stop();
+                if (clueTuneKbps > 0) {
+                    clueTraceSession.discard(); // tuner steps write no trace files
+                } else {
+                    clueTraceSession.stop();
+                }
                 clueTraceSession = null;
             }
 
@@ -2574,6 +2678,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     spinner = null;
                 }
 
+                // CLUE: a tuner step that fails to start is reported, not shown
+                if (clueTuneKbps > 0) {
+                    LimeLog.severe("Clue tuner: " + stage + " failed: " + errorCode);
+                    clueTuneFinishInterrupted();
+                    return;
+                }
+
                 if (!displayedFailureDialog) {
                     displayedFailureDialog = true;
                     LimeLog.severe(stage + " failed: " + errorCode);
@@ -2618,6 +2729,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 // Ungrab input
                 setInputGrabState(false);
+
+                // CLUE: a tuner step cut short by the host or the network counts as interrupted
+                if (clueTuneKbps > 0) {
+                    LimeLog.severe("Clue tuner: connection terminated: " + errorCode);
+                    clueTuneFinishInterrupted();
+                    return;
+                }
 
                 if (!displayedFailureDialog) {
                     displayedFailureDialog = true;
@@ -2751,7 +2869,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 hideSystemUi(1000);
 
-                clueMaybeStartPhotonTest(); // CLUE
+                if (clueTuneKbps > 0) {
+                    clueTuneOnConnected(); // CLUE: bitrate tuner step
+                } else {
+                    clueMaybeStartPhotonTest(); // CLUE
+                }
             }
         });
 
@@ -2847,7 +2969,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (clueDropEvery > 0) {
                 clueMeta.put("inputDropEvery", String.valueOf(clueDropEvery));
             }
-            if (android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
+            // Tuner steps always trace (in memory only) for the decode p95
+            if (clueTuneKbps > 0 || android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
                     .getBoolean("clue_trace_enabled", true)) {
                 clueTraceSession = com.clue.trace.TraceSession.start(Game.this, clueMeta);
             }
