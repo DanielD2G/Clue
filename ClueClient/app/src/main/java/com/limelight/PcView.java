@@ -68,9 +68,6 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
     private LauncherUi launcherUi;
     private CoverCarousel carousel;
     private int lastSelection;
-    // CLUE: with a single paired PC, open its library on launch (once, so going back stays here)
-    private boolean autoOpenedLibrary;
-    public static final String NO_AUTO_OPEN_EXTRA = "clue_no_auto_open";
     private PcGridAdapter pcGridAdapter;
     private ShortcutHelper shortcutHelper;
     private ComputerManagerService.ComputerManagerBinder managerBinder;
@@ -398,9 +395,6 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
 
     private void completeOnCreate() {
         completeOnCreateCalled = true;
-
-        // CLUE: the user asked for the PC list, so don't jump straight into a library
-        autoOpenedLibrary = getIntent().getBooleanExtra(NO_AUTO_OPEN_EXTRA, false);
 
         shortcutHelper = new ShortcutHelper(this);
 
@@ -911,13 +905,6 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
 
         // Notify the view that the data has changed
         pcGridAdapter.notifyDataSetChanged();
-
-        // CLUE: with a single PC, go straight to its library
-        if (!autoOpenedLibrary && inForeground && pcGridAdapter.getCount() == 1 &&
-                details.state == ComputerDetails.State.ONLINE && details.pairState == PairState.PAIRED) {
-            autoOpenedLibrary = true;
-            doAppList(details, false, false);
-        }
     }
 
     public static class ComputerObject {

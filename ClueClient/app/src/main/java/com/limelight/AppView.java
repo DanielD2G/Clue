@@ -630,8 +630,7 @@ public class AppView extends Activity { // CLUE: the launcher carousel replaces 
                 if (tab == LauncherUi.TAB_COMPUTERS) {
                     if (isTaskRoot()) {
                         // Opened from a launcher shortcut: there is no PC list underneath
-                        startActivity(new Intent(AppView.this, PcView.class)
-                                .putExtra(PcView.NO_AUTO_OPEN_EXTRA, true));
+                        startActivity(new Intent(AppView.this, PcView.class));
                     }
                     finish();
                 }
