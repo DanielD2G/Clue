@@ -2,7 +2,8 @@
 # Measures the real display cadence of a streaming client's video layer from
 # SurfaceFlinger's frame timeline (dumpsys --latency returns nothing on Android 16).
 #
-# Usage: tools/cadence.sh [seconds=120] [package=com.clue.client] [vsync_ms=8.333]
+# Usage: tools/cadence.sh [seconds=120] [package=com.clue.client] [vsync_ms=auto]
+# vsync_ms "auto" reads the active panel refresh rate from dumpsys display when sampling starts.
 # Prints a per-dump time series of repeated frames, then the share of present
 # intervals that lasted 1, 2, 3 and 4+ vsyncs. Overlapping dumps are de-duplicated
 # by present time within each dump; runs should be >= 120 s because the host/panel
@@ -12,7 +13,7 @@ export MSYS_NO_PATHCONV=1
 
 secs="${1:-120}"
 pkg="${2:-com.clue.client}"
-vsync="${3:-8.333}"
+vsync="${3:-auto}"
 if [ -x "$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" ]; then
   ADB="$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe"
 else
@@ -20,6 +21,12 @@ else
 fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+. "$(cd "$(dirname "$0")" && pwd)/clue-device.sh"
+if [ "$vsync" = auto ]; then
+  vsync="$(clue_vsync_ms)"
+  [ -n "$vsync" ] || { echo "could not read the panel refresh rate; pass vsync_ms" >&2; exit 1; }
+fi
+echo "vsync=${vsync} ms"
 
 # Present times (ms, relative to the dump) of the video layer in one frametimeline dump.
 presents() {

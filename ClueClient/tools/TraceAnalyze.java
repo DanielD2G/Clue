@@ -9,7 +9,7 @@ import java.util.List;
  * Analyzes a Clue session trace folder (frames.csv, input.csv, summary.txt).
  *
  * Usage:
- *   java tools/TraceAnalyze.java <session-folder> [--vsync-ms 8.333]
+ *   java tools/TraceAnalyze.java <session-folder> [--vsync-ms <ms>]  (default: median period in vsync.csv)
  *   java tools/TraceAnalyze.java --selftest
  *
  * Prints n/p50/p95/p99/max per stage in ms. Negative deltas (clock or pairing
@@ -144,21 +144,48 @@ public class TraceAnalyze {
         return ok ? 0 : 1;
     }
 
+    /** Median periodNs (4th column) of vsync.csv in ms, or 8.333 when the file is missing or empty. */
+    static double medianVsyncMs(Path vsyncCsv) throws IOException {
+        if (!Files.exists(vsyncCsv)) {
+            return 8.333;
+        }
+        List<Long> periods = new ArrayList<>();
+        for (String line : Files.readAllLines(vsyncCsv, StandardCharsets.UTF_8)) {
+            String[] cols = line.split(",");
+            if (cols.length >= 4 && !cols[3].isEmpty() && Character.isDigit(cols[3].charAt(0))) {
+                long p = Long.parseLong(cols[3].trim());
+                if (p > 0) {
+                    periods.add(p);
+                }
+            }
+        }
+        if (periods.isEmpty()) {
+            return 8.333;
+        }
+        periods.sort(null);
+        return periods.get(periods.size() / 2) / 1e6;
+    }
+
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
-            System.err.println("usage: java tools/TraceAnalyze.java <session-folder> [--vsync-ms 8.333] | --selftest");
+            System.err.println("usage: java tools/TraceAnalyze.java <session-folder> [--vsync-ms <ms>]  (default: median period in vsync.csv) | --selftest");
             System.exit(2);
         }
         if (args[0].equals("--selftest")) {
             System.exit(selftest());
         }
-        double vsyncMs = 8.333;
+        Path dir = Path.of(args[0]);
+        // CLUE: the panel period comes from the trace (vsync.csv) unless given; 8.333 only as a last resort
+        double vsyncMs = Double.NaN;
         for (int i = 1; i + 1 < args.length; i++) {
             if (args[i].equals("--vsync-ms")) {
                 vsyncMs = Double.parseDouble(args[i + 1]);
             }
         }
-        Path dir = Path.of(args[0]);
+        if (Double.isNaN(vsyncMs)) {
+            vsyncMs = medianVsyncMs(dir.resolve("vsync.csv"));
+        }
+        System.out.printf("  vsync=%.3f ms%n", vsyncMs);
         Path summary = dir.resolve("summary.txt");
         if (Files.exists(summary)) {
             Files.readAllLines(summary, StandardCharsets.UTF_8).forEach(l -> System.out.println("  " + l));
