@@ -155,7 +155,7 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
         }
         // CLUE: and switch the async decode path for A/B runs (--ez clue_async_decode <bool>)
         PreferenceConfiguration.applyClueAsyncDecodeExtra(this, getIntent());
-        // CLUE: and bitrate / codec for sweeps (--ei clue_bitrate_kbps <kbps>, --es clue_video_format <value>)
+        // CLUE: and bitrate / codec / fps for sweeps (--ei clue_bitrate_kbps <kbps>, --es clue_video_format <value>, --es clue_fps <n>)
         PreferenceConfiguration.applyClueStreamExtras(this, getIntent());
 
         // Set default preferences if we've never been run

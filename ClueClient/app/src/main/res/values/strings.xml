@@ -296,6 +296,9 @@
     <string name="fps_60">60 FPS</string>
     <string name="fps_90">90 FPS</string>
     <string name="fps_120">120 FPS</string>
+    <!-- CLUE: 144/165 Hz panels -->
+    <string name="fps_144">144 FPS</string>
+    <string name="fps_165">165 FPS</string>
 
     <string name="audioconf_stereo">Stereo</string>
     <string name="audioconf_51surround">5.1 Surround Sound</string>

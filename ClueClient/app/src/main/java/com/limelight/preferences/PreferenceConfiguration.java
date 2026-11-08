@@ -400,6 +400,20 @@ public class PreferenceConfiguration {
             changed = true;
         }
 
+        // CLUE: default frame rate = the panel's fastest mode (165 on the TB323FU, 120 on the POCO Pad).
+        // setDefaultValues() already wrote "120" on existing installs, so "120" or missing moves to
+        // the native rate once; any other explicit choice is kept.
+        if (!prefs.getBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, false)) {
+            String fps = com.clue.defaults.ClueDefaults.migratedFps(
+                    prefs.getString(FPS_PREF_STRING, null),
+                    com.clue.defaults.ClueDefaults.nativeFps(maxDisplayRefreshRate(context)));
+            if (fps != null) {
+                editor.putString(FPS_PREF_STRING, fps);
+            }
+            editor.putBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, true);
+            changed = true;
+        }
+
         // CLUE: the Artemis touchscreen mode list replaces checkbox_touchscreen_trackpad. Its old
         // default can't be told apart from a choice, so every install moves to Multi-touch once.
         String touchMode = com.clue.input.TouchMode.migrationValue(
@@ -414,6 +428,38 @@ public class PreferenceConfiguration {
         if (changed) {
             editor.apply();
         }
+    }
+
+    // CLUE: fastest refresh rate among the default display's modes (0 when unknown), capped by the
+    // system "peak refresh rate" setting: that user vote outranks the app's mode request in
+    // DisplayModeDirector, so on a TB323FU left at 120 Hz a 165 fps stream would land on a 120 Hz panel.
+    private static float maxDisplayRefreshRate(Context context) {
+        float max = maxDisplayModeRefreshRate(context);
+        try {
+            String peak = android.provider.Settings.System.getString(context.getContentResolver(), "peak_refresh_rate");
+            if (peak != null && Float.parseFloat(peak) > 0) {
+                max = Math.min(max, Float.parseFloat(peak));
+            }
+        } catch (RuntimeException e) {
+            // Not readable or not a number on this build: use the display modes alone
+        }
+        return max;
+    }
+
+    private static float maxDisplayModeRefreshRate(Context context) {
+        android.hardware.display.DisplayManager dm =
+                (android.hardware.display.DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        android.view.Display display = dm != null ? dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) : null;
+        if (display == null) {
+            return 0;
+        }
+        float max = display.getRefreshRate();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            for (android.view.Display.Mode mode : display.getSupportedModes()) {
+                max = Math.max(max, mode.getRefreshRate());
+            }
+        }
+        return max;
     }
 
     // CLUE: async MediaCodec output path, only used with the Clue presenter (off until measured)
@@ -432,7 +478,7 @@ public class PreferenceConfiguration {
     }
 
     // CLUE: measurement scripts pick bitrate and codec at launch (am start --ei clue_bitrate_kbps <kbps>
-    // --es clue_video_format <auto|forceav1|forceh265|neverh265>). Values the settings screen
+    // --es clue_video_format <auto|forceav1|forceh265|neverh265> --es clue_fps <n>). Values the settings screen
     // doesn't offer are ignored; the choice persists until changed again.
     public static void applyClueStreamExtras(Context context, android.content.Intent intent) {
         if (intent == null) {
@@ -448,6 +494,12 @@ public class PreferenceConfiguration {
         String format = intent.getStringExtra("clue_video_format");
         if (format != null && java.util.Arrays.asList("auto", "forceav1", "forceh265", "neverh265").contains(format)) {
             editor.putString(VIDEO_FORMAT_PREF_STRING, format);
+            changed = true;
+        }
+        // CLUE: --es clue_fps <30|60|90|120|144|165>
+        String fps = intent.getStringExtra("clue_fps");
+        if (fps != null && java.util.Arrays.asList("30", "60", "90", "120", "144", "165").contains(fps)) {
+            editor.putString(FPS_PREF_STRING, fps);
             changed = true;
         }
         if (changed) {
