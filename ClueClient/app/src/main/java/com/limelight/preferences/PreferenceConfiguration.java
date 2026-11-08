@@ -431,6 +431,30 @@ public class PreferenceConfiguration {
                 .apply();
     }
 
+    // CLUE: measurement scripts pick bitrate and codec at launch (am start --ei clue_bitrate_kbps <kbps>
+    // --es clue_video_format <auto|forceav1|forceh265|neverh265>). Values the settings screen
+    // doesn't offer are ignored; the choice persists until changed again.
+    public static void applyClueStreamExtras(Context context, android.content.Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(context).edit();
+        boolean changed = false;
+        int kbps = intent.getIntExtra("clue_bitrate_kbps", 0);
+        if (kbps >= 500 && kbps <= com.clue.defaults.ClueDefaults.MAX_BITRATE_KBPS) {
+            editor.putInt(BITRATE_PREF_STRING, kbps);
+            changed = true;
+        }
+        String format = intent.getStringExtra("clue_video_format");
+        if (format != null && java.util.Arrays.asList("auto", "forceav1", "forceh265", "neverh265").contains(format)) {
+            editor.putString(VIDEO_FORMAT_PREF_STRING, format);
+            changed = true;
+        }
+        if (changed) {
+            editor.apply();
+        }
+    }
+
     // CLUE: only the pacing values the settings screen itself offers are accepted
     public static void applyCluePacingExtra(Context context, String pacing) {
         if (pacing == null || !java.util.Arrays.asList("clue", "latency", "balanced", "cap-fps", "smoothness").contains(pacing)) {

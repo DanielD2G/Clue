@@ -44,8 +44,11 @@ for attempt in 1 2 3 4 5 6 7 8; do
       sleep 4 ;;
     *com.limelight.AppView*)
       dump; b="$(bounds_of "Reanudar sesión")"
+      [ -n "$b" ] || b="$(bounds_of "Resume Session")"   # English UI (Lenovo TB323FU)
       if [ -n "$b" ]; then set -- $b; "$ADB" shell input tap $(( ($1+$3)/2 )) $(( ($2+$4)/2 )); sleep 8; continue; fi
-      "$ADB" shell input tap 482 354
+      # Desktop tile: found by its label when the dump has it, else the POCO Pad position
+      b="$(bounds_of "Desktop")"
+      if [ -n "$b" ]; then set -- $b; "$ADB" shell input tap $(( ($1+$3)/2 )) $(( $2 - 200 )); else "$ADB" shell input tap 482 354; fi
       sleep 3 ;;
     *) "$ADB" shell input keyevent KEYCODE_BACK; sleep 2 ;;
   esac
