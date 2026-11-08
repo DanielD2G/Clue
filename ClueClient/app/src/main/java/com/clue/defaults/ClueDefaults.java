@@ -7,6 +7,8 @@ package com.clue.defaults;
 public final class ClueDefaults {
     public static final String FPS = "120";
     public static final int BITRATE_KBPS = 80000;
+    /** Top of the bitrate slider (keep in sync with android:max in res/xml/preferences.xml). */
+    public static final int MAX_BITRATE_KBPS = 300000;
     public static final String FRAME_PACING = "clue";
     public static final boolean PERF_OVERLAY = true;
 

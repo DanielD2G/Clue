@@ -288,6 +288,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private MediaCodecInfo findAv1Decoder(PreferenceConfiguration prefs) {
         // For now, don't use AV1 unless explicitly requested
+        // CLUE: kept on purpose. On the TB323FU (2026-11-08 sweep) AV1 decoded ~0.5 ms slower at p50
+        // than HEVC with a worse tail at 300 Mbps, so auto stays on HEVC; "Prefer AV1" opts in.
         if (prefs.videoFormat != PreferenceConfiguration.FormatOption.FORCE_AV1) {
             return null;
         }

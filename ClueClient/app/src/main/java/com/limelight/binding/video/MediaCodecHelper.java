@@ -767,7 +767,15 @@ public class MediaCodecHelper {
             return false;
         }
 
-        // TODO: Test some AV1 decoders
+        // CLUE: hardware AV1 decoders with a low-latency mode (FEATURE_LowLatency or a known vendor
+        // key, e.g. c2.qti.av1.decoder.low_latency on Snapdragon 8 Elite Gen 5) are fast enough for
+        // streaming. Tested on the Lenovo TB323FU against NVENC AV1.
+        if (decoderSupportsAndroidRLowLatency(decoderInfo, "video/av01") ||
+                decoderSupportsKnownVendorLowLatencyOption(decoderInfo.getName())) {
+            LimeLog.info("Allowing AV1 based on low latency option support");
+            return true;
+        }
+
         return false;
     }
 
