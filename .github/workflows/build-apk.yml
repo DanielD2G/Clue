@@ -1,0 +1,116 @@
+# Builds the Clue release APK in two variants and publishes them.
+#   clue-<version>-standard.apk  no game category (default: Lenovo lets it use 165 Hz)
+#   clue-<version>-game.apk      android:isGame + appCategory="game" (OEM game modes, e.g. Xiaomi Game Turbo)
+#
+# Every push to main and every PR: JVM tests + both APKs as a workflow artifact.
+# A tag v* (e.g. v0.2.0) also creates a GitHub Release with both APKs attached.
+#
+# Signing: with the repository secrets CLUE_KEYSTORE_BASE64, CLUE_KEYSTORE_PASSWORD,
+# CLUE_KEY_ALIAS and CLUE_KEY_PASSWORD the APKs are signed with the release key, so they
+# update an existing install. Without them they are signed with the debug key ("-debugsigned"
+# in the name): installable, but not over a release install.
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # gh release create on tags
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ClueClient
+    env:
+      NDK_VERSION: 29.0.14206865
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Android SDK packages
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" --install "platforms;android-37.0" "build-tools;37.0.0" "ndk;$NDK_VERSION" > /dev/null
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CLUE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.CLUE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.CLUE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.CLUE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/clue-release.jks"
+            {
+              echo "storeFile=$RUNNER_TEMP/clue-release.jks"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > keystore.properties
+            echo "SIGNING=release" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No release keystore secrets: APKs are signed with the debug key."
+            echo "SIGNING=debug" >> "$GITHUB_ENV"
+            echo "SIGN_ARG=-PclueDebugSigned" >> "$GITHUB_ENV"
+          fi
+
+      - name: JVM tests
+        run: ./gradlew :app:testNonRootDebugUnitTest
+
+      - name: Build both variants
+        run: |
+          version=$(grep -m1 -oE 'versionName "[^"]+"' app/build.gradle | cut -d'"' -f2)
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then version="${GITHUB_REF_NAME#v}"; else version="$version-$(git rev-parse --short HEAD)"; fi
+          suffix=""; [ "$SIGNING" = debug ] && suffix="-debugsigned"
+          apk=app/build/outputs/apk/nonRoot/release/app-nonRoot-release.apk
+          mkdir -p dist
+          ./gradlew :app:assembleNonRootRelease $SIGN_ARG
+          cp "$apk" "dist/clue-$version-standard$suffix.apk"
+          ./gradlew :app:assembleNonRootRelease -PclueGameCategory $SIGN_ARG
+          cp "$apk" "dist/clue-$version-game$suffix.apk"
+          ls -l dist
+
+      - name: Check the game category in each APK
+        run: |
+          aapt2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
+          for f in dist/*.apk; do
+            n=$("$aapt2" dump xmltree --file AndroidManifest.xml "$f" | grep -c 'android:isGame' || true)
+            case "$f" in
+              *-game*) [ "$n" -ge 1 ] || { echo "::error::$f lacks android:isGame"; exit 1; } ;;
+              *)       [ "$n" -eq 0 ] || { echo "::error::$f declares android:isGame"; exit 1; } ;;
+            esac
+            echo "$f: isGame entries=$n"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clue-apks
+          path: ClueClient/dist/*.apk
+          if-no-files-found: error
+
+      - name: GitHub Release (tags)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.apk --title "Clue $GITHUB_REF_NAME" --generate-notes
