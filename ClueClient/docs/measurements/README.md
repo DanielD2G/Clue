@@ -27,10 +27,12 @@ Ninguna optimización entra sin datos (ver [AGENTS.md](../../AGENTS.md)). Este e
 
 | Herramienta | Qué mide |
 |---|---|
-| `tools/measure.sh <modo> [s] [etiqueta]` | Una corrida completa en el modo de pacing pedido (`clue`, `balanced`, …). Agrega una línea a `../traces/measure-results.txt` |
+| `tools/measure.sh <modo> [s] [etiqueta]` | Una corrida completa en el modo de pacing pedido (`clue`, `balanced`, …). Con `CLUE_APP` arranca esa app por el trampolín. Corta el stream con Quick Menu → Disconnect. Agrega una línea a `../traces/measure-results.txt` |
 | `tools/presenter-sim.sh <sesión> [latch ms]` | Reproduce una sesión grabada (`presenter.csv` + `vsync.csv`) con la política del presentador y un modelo de SurfaceFlinger. `-Dskip=k` simula un juego que saltea 1 de cada k frames |
 | `tools/clue-launch-desktop.sh` | Abre Clue y arranca o reanuda "Desktop". Con `CLUE_PACING=<modo>` elige antes el modo de pacing |
-| `tools/cadence.sh 120 [package]` | Cadencia **real** de presentación según SurfaceFlinger: % de intervalos de 1, 2, 3 y 4+ vsync. Sirve para cualquier cliente (`com.clue.client`, `com.limelight.noir`, …) |
+| `tools/clue-launch-app.sh [app] [pc]` | Arranca una app del host por `ShortcutTrampoline`, sin tocar la UI. Con `CLUE_FPS`, `CLUE_BITRATE_KBPS`, `CLUE_VIDEO_FORMAT` y `CLUE_PACING` fija el stream antes, y confirma el diálogo de "quit running app" |
+| `tools/sweep.sh <s> "<formato> <kbps> [fps]" …` | Barrido de códec × bitrate × fps. Por corrida: cadencia SF, cola → presentación, TraceAnalyze, latencia del host y lo que Vibepollo registró **durante esa corrida** (si no hay líneas nuevas, la marca `DUDOSO`). Resultados en `../traces/sweep-results.txt` |
+| `tools/cadence.sh 120 [package] [vsync_ms]` | Cadencia **real** de presentación según SurfaceFlinger: % de intervalos de 1, 2, 3 y 4+ vsync. Sirve para cualquier cliente (`com.clue.client`, `com.limelight.noir`, …) |
 | Overlay de Clue | Latencias p50/p99 en vivo: red, decodificación, a pantalla y entrada→envío |
 | `tools/pull-traces.sh` | Baja las trazas de las sesiones de Clue al PC (carpeta `../traces`) |
 | `java tools/TraceAnalyze.java <carpeta>` | Desglose por etapa (n, p50, p95, p99, máx.) de una sesión. Las deltas negativas se reportan aparte |
@@ -40,3 +42,6 @@ Ninguna optimización entra sin datos (ver [AGENTS.md](../../AGENTS.md)). Este e
 - En la POCO Pad, `onFrameRendered` informa la hora de presentación **programada**, no la real. La latencia "a pantalla" de la traza llega entonces hasta el vsync programado, y la cadencia real sale únicamente de `cadence.sh`.
 - El "decode time" del overlay de upstream no es una métrica confiable. Hay que usar las líneas de Clue.
 - Los eventos inyectados con `adb input` no sirven para medir latencia de entrada: su hora de evento la pone el shell antes de inyectarlos.
+- El vsync no es fijo. `measure.sh`, `sweep.sh` y `cadence.sh` lo leen de `dumpsys display` (`mActiveRenderFrameRate`), y `TraceAnalyze` lo saca de `vsync.csv`. Se puede forzar con `CLUE_VSYNC_MS` o `--vsync-ms`.
+- "Completo→pantalla(prog.)" usa el instante programado, que el presentador pone medio período antes del vsync esperado. Al comparar frecuencias distintas hay que sumarle medio período o usar cola → presentación de SurfaceFlinger (ver [2026-11-08-tb323fu-165hz.md](2026-11-08-tb323fu-165hz.md)).
+- En Windows, `TaskStop` sobre un script de medición en segundo plano puede dejar vivo el `bash` hijo, que sigue lanzando streams. Hay que correr los barridos en primer plano, o revisar después que no quede ningún proceso (`Get-CimInstance Win32_Process | ? CommandLine -match 'sweep|measure'`).

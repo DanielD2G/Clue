@@ -400,6 +400,28 @@ public class PreferenceConfiguration {
             changed = true;
         }
 
+        // CLUE: default frame rate = the panel's fastest mode (165 on the TB323FU, 120 on the POCO Pad).
+        // setDefaultValues() already wrote "120" on existing installs, so "120" or missing moves to
+        // the native rate; any other explicit choice is kept. While the system peak refresh rate caps
+        // the panel lower (Lenovo sets it per foreground app), the cap wins and the migration stays
+        // pending, so a later launch moves up once the cap is lifted.
+        if (!prefs.getBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, false)) {
+            float modeMax = maxDisplayModeRefreshRate(context);
+            float peak = peakRefreshRateSetting(context);
+            float usable = peak > 0 ? Math.min(modeMax, peak) : modeMax;
+            String fps = com.clue.defaults.ClueDefaults.migratedFps(
+                    prefs.getString(FPS_PREF_STRING, null),
+                    com.clue.defaults.ClueDefaults.nativeFps(usable));
+            if (fps != null) {
+                editor.putString(FPS_PREF_STRING, fps);
+                changed = true;
+            }
+            if (com.clue.defaults.ClueDefaults.fpsMigrationFinal(modeMax, peak)) {
+                editor.putBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, true);
+                changed = true;
+            }
+        }
+
         // CLUE: the Artemis touchscreen mode list replaces checkbox_touchscreen_trackpad. Its old
         // default can't be told apart from a choice, so every install moves to Multi-touch once.
         String touchMode = com.clue.input.TouchMode.migrationValue(
@@ -414,6 +436,35 @@ public class PreferenceConfiguration {
         if (changed) {
             editor.apply();
         }
+    }
+
+    // CLUE: the system "peak refresh rate" setting (0 when missing or unreadable). That user vote
+    // outranks the app's mode request in DisplayModeDirector, so a 165 fps stream on a panel capped
+    // at 120 Hz would land on 120 Hz. Lenovo rewrites it per foreground app.
+    private static float peakRefreshRateSetting(Context context) {
+        try {
+            String peak = android.provider.Settings.System.getString(context.getContentResolver(), "peak_refresh_rate");
+            return peak != null ? Math.max(0f, Float.parseFloat(peak)) : 0f;
+        } catch (RuntimeException e) {
+            return 0f; // Not readable or not a number on this build: use the display modes alone
+        }
+    }
+
+    // CLUE: fastest refresh rate among the default display's modes (0 when unknown)
+    private static float maxDisplayModeRefreshRate(Context context) {
+        android.hardware.display.DisplayManager dm =
+                (android.hardware.display.DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+        android.view.Display display = dm != null ? dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) : null;
+        if (display == null) {
+            return 0;
+        }
+        float max = display.getRefreshRate();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            for (android.view.Display.Mode mode : display.getSupportedModes()) {
+                max = Math.max(max, mode.getRefreshRate());
+            }
+        }
+        return max;
     }
 
     // CLUE: async MediaCodec output path, only used with the Clue presenter (off until measured)
@@ -432,7 +483,7 @@ public class PreferenceConfiguration {
     }
 
     // CLUE: measurement scripts pick bitrate and codec at launch (am start --ei clue_bitrate_kbps <kbps>
-    // --es clue_video_format <auto|forceav1|forceh265|neverh265>). Values the settings screen
+    // --es clue_video_format <auto|forceav1|forceh265|neverh265> --es clue_fps <n>). Values the settings screen
     // doesn't offer are ignored; the choice persists until changed again.
     public static void applyClueStreamExtras(Context context, android.content.Intent intent) {
         if (intent == null) {
@@ -448,6 +499,12 @@ public class PreferenceConfiguration {
         String format = intent.getStringExtra("clue_video_format");
         if (format != null && java.util.Arrays.asList("auto", "forceav1", "forceh265", "neverh265").contains(format)) {
             editor.putString(VIDEO_FORMAT_PREF_STRING, format);
+            changed = true;
+        }
+        // CLUE: --es clue_fps <30|60|90|120|144|165>
+        String fps = intent.getStringExtra("clue_fps");
+        if (fps != null && java.util.Arrays.asList("30", "60", "90", "120", "144", "165").contains(fps)) {
+            editor.putString(FPS_PREF_STRING, fps);
             changed = true;
         }
         if (changed) {
