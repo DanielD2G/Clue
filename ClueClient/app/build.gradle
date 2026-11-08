@@ -142,10 +142,24 @@ android {
 
             if (clueKeystoreFile.exists()) {
                 signingConfig signingConfigs.release
+            } else if (project.hasProperty('clueDebugSigned')) {
+                // CLUE: CI without the release keystore (forks, missing secrets) still produces an
+                // installable APK, signed with the debug key; it can't update a release install.
+                signingConfig signingConfigs.debug
             }
 
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // CLUE: -PclueGameCategory builds the "game" variant: src/gameCategory/AndroidManifest.xml is
+    // merged over the main manifest and restores android:isGame / appCategory="game". Same tasks and
+    // applicationId as the default build, so either APK installs over the other's data.
+    if (project.hasProperty('clueGameCategory')) {
+        sourceSets {
+            debug.manifest.srcFile 'src/gameCategory/AndroidManifest.xml'
+            release.manifest.srcFile 'src/gameCategory/AndroidManifest.xml'
         }
     }
 

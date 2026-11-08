@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CLUE: "game" variant, built with -PclueGameCategory. Merged over the main manifest to
+     restore android:isGame / android:appCategory="game" (upstream Moonlight declares both).
+     OEM game modes pick it up: on Xiaomi it can enable Game Turbo, but Lenovo's Legion Space
+     caps game apps at 120 Hz on the TB323FU, so the default build leaves it out
+     (docs/measurements/2026-11-08-tb323fu-165hz.md). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:isGame="true"
+        android:appCategory="game" />
+</manifest>

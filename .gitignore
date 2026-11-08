@@ -5,6 +5,7 @@
 !/.gitmodules
 !/README.md
 !/ClueClient/
+!/.github/
 
 # router.cfg guarda las claves Wi-Fi en claro
 hardware/puppis-s1/backups/
