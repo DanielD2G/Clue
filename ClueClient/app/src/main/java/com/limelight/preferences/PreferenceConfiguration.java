@@ -402,16 +402,24 @@ public class PreferenceConfiguration {
 
         // CLUE: default frame rate = the panel's fastest mode (165 on the TB323FU, 120 on the POCO Pad).
         // setDefaultValues() already wrote "120" on existing installs, so "120" or missing moves to
-        // the native rate once; any other explicit choice is kept.
+        // the native rate; any other explicit choice is kept. While the system peak refresh rate caps
+        // the panel lower (Lenovo sets it per foreground app), the cap wins and the migration stays
+        // pending, so a later launch moves up once the cap is lifted.
         if (!prefs.getBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, false)) {
+            float modeMax = maxDisplayModeRefreshRate(context);
+            float peak = peakRefreshRateSetting(context);
+            float usable = peak > 0 ? Math.min(modeMax, peak) : modeMax;
             String fps = com.clue.defaults.ClueDefaults.migratedFps(
                     prefs.getString(FPS_PREF_STRING, null),
-                    com.clue.defaults.ClueDefaults.nativeFps(maxDisplayRefreshRate(context)));
+                    com.clue.defaults.ClueDefaults.nativeFps(usable));
             if (fps != null) {
                 editor.putString(FPS_PREF_STRING, fps);
+                changed = true;
             }
-            editor.putBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, true);
-            changed = true;
+            if (com.clue.defaults.ClueDefaults.fpsMigrationFinal(modeMax, peak)) {
+                editor.putBoolean(com.clue.defaults.ClueDefaults.FPS_NATIVE_MIGRATION_PREF, true);
+                changed = true;
+            }
         }
 
         // CLUE: the Artemis touchscreen mode list replaces checkbox_touchscreen_trackpad. Its old
@@ -430,22 +438,19 @@ public class PreferenceConfiguration {
         }
     }
 
-    // CLUE: fastest refresh rate among the default display's modes (0 when unknown), capped by the
-    // system "peak refresh rate" setting: that user vote outranks the app's mode request in
-    // DisplayModeDirector, so on a TB323FU left at 120 Hz a 165 fps stream would land on a 120 Hz panel.
-    private static float maxDisplayRefreshRate(Context context) {
-        float max = maxDisplayModeRefreshRate(context);
+    // CLUE: the system "peak refresh rate" setting (0 when missing or unreadable). That user vote
+    // outranks the app's mode request in DisplayModeDirector, so a 165 fps stream on a panel capped
+    // at 120 Hz would land on 120 Hz. Lenovo rewrites it per foreground app.
+    private static float peakRefreshRateSetting(Context context) {
         try {
             String peak = android.provider.Settings.System.getString(context.getContentResolver(), "peak_refresh_rate");
-            if (peak != null && Float.parseFloat(peak) > 0) {
-                max = Math.min(max, Float.parseFloat(peak));
-            }
+            return peak != null ? Math.max(0f, Float.parseFloat(peak)) : 0f;
         } catch (RuntimeException e) {
-            // Not readable or not a number on this build: use the display modes alone
+            return 0f; // Not readable or not a number on this build: use the display modes alone
         }
-        return max;
     }
 
+    // CLUE: fastest refresh rate among the default display's modes (0 when unknown)
     private static float maxDisplayModeRefreshRate(Context context) {
         android.hardware.display.DisplayManager dm =
                 (android.hardware.display.DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);

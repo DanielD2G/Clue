@@ -38,6 +38,16 @@ public final class ClueDefaults {
     }
 
     /**
+     * Whether the native-fps migration can be marked done. While the system peak refresh rate
+     * ({@code cappedHz}, 0 when unreadable) holds the panel below a faster list entry, it stays
+     * pending so a later launch moves to the faster rate once the cap is lifted. Lenovo rewrites
+     * that setting per foreground app (Clue gets 120 Hz on the TB323FU unless set to the top level).
+     */
+    public static boolean fpsMigrationFinal(float modeMaxHz, float cappedHz) {
+        return !(cappedHz > 0) || nativeFps(cappedHz).equals(nativeFps(modeMaxHz));
+    }
+
+    /**
      * Value to write for the one-shot native-fps migration, or null to keep the current one.
      * "120" was written by setDefaultValues on every existing install, so it can't be told apart
      * from a choice and moves to the native rate together with a missing value.

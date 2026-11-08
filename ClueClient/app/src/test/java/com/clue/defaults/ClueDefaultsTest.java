@@ -60,6 +60,18 @@ public class ClueDefaultsTest {
     }
 
     @Test
+    public void fpsMigrationWaitsWhileThePeakSettingCapsThePanel() {
+        // Lenovo caps Clue at 120 Hz on a 165 Hz panel: retry on a later launch
+        assertEquals(false, ClueDefaults.fpsMigrationFinal(165f, 120f));
+        // Cap lifted, or a cap that still lands on the same list entry
+        assertTrue(ClueDefaults.fpsMigrationFinal(165f, 165f));
+        assertTrue(ClueDefaults.fpsMigrationFinal(165f, 164.6f));
+        assertTrue(ClueDefaults.fpsMigrationFinal(120f, 120f));
+        // No cap readable
+        assertTrue(ClueDefaults.fpsMigrationFinal(165f, 0f));
+    }
+
+    @Test
     public void fpsMigrationKeepsExplicitChoices() {
         assertNull(ClueDefaults.migratedFps("60", "165"));
         assertNull(ClueDefaults.migratedFps("90", "165"));
