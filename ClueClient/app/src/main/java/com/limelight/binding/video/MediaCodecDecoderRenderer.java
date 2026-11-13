@@ -121,8 +121,8 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     // CLUE: overlay statistics over the newest 2 s at 120 fps (computed once per overlay update)
     private final com.clue.trace.TraceStats clueStats = new com.clue.trace.TraceStats(240);
     // CLUE: H2 presenter, releases each frame at decode-out against Choreographer vsync timelines
-    private final com.clue.video.PresentPolicy cluePolicy = new com.clue.video.PresentPolicy(
-            com.clue.video.PresentPolicy.DEFAULT_SAFETY_NS, com.clue.video.PresentPolicy.DEFAULT_HYSTERESIS_NS);
+    // The variant is a measurement knob (am start --es clue_present <base|ready|ready-margin>)
+    private final com.clue.video.PresentPolicy cluePolicy;
     private com.clue.video.ClueVsyncSource clueVsync;
     private final long[] clueWireScratch = new long[1024]; // CLUE: overlay input-to-wire window
     // CLUE: host capture time per codec PTS, written by the input thread and read at decode-out.
@@ -333,6 +333,9 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         this.context = activity;
         this.activity = activity;
         this.prefs = prefs;
+        // CLUE: presenter variant; the default unless a measurement script chose another
+        this.cluePolicy = com.clue.video.PresentPolicy.forVariant(
+                android.preference.PreferenceManager.getDefaultSharedPreferences(activity).getString("clue_present", com.clue.video.PresentPolicy.DEFAULT_VARIANT));
         this.crashListener = crashListener;
         this.consecutiveCrashCount = consecutiveCrashCount;
         this.glRenderer = glRenderer;

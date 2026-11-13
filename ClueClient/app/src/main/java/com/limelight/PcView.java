@@ -153,6 +153,19 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
             android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putInt("clue_photon_test", getIntent().getIntExtra("clue_photon_test", 0)).apply();
         }
+        // CLUE: and the presenter variant for A/B runs (--es clue_present <base|ready|ready-margin>);
+        // "default" forgets the choice, so the app's own default applies again
+        if (getIntent().hasExtra("clue_present")) {
+            String cluePresent = getIntent().getStringExtra("clue_present");
+            android.content.SharedPreferences.Editor cluePresentEditor =
+                    android.preference.PreferenceManager.getDefaultSharedPreferences(this).edit();
+            if ("default".equals(cluePresent)) {
+                cluePresentEditor.remove("clue_present");
+            } else {
+                cluePresentEditor.putString("clue_present", cluePresent);
+            }
+            cluePresentEditor.apply();
+        }
         // CLUE: and switch the async decode path for A/B runs (--ez clue_async_decode <bool>)
         PreferenceConfiguration.applyClueAsyncDecodeExtra(this, getIntent());
         // CLUE: and bitrate / codec / fps for sweeps (--ei clue_bitrate_kbps <kbps>, --es clue_video_format <value>, --es clue_fps <n>)

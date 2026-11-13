@@ -5,7 +5,8 @@
 #
 # Usage: tools/clue-launch-app.sh [app-name="Clue Bitrate Test"] [pc-name=DanielsPC]
 # Env (all optional, persisted by Clue until changed): CLUE_FPS, CLUE_BITRATE_KBPS,
-#   CLUE_VIDEO_FORMAT (auto|forceav1|forceh265|neverh265), CLUE_PACING (clue|balanced|latency|...)
+#   CLUE_VIDEO_FORMAT (auto|forceav1|forceh265|neverh265), CLUE_PACING (clue|balanced|latency|...),
+#   CLUE_PRESENT (base|ready|ready-margin: presenter variant; "default" forgets a saved one)
 set -euo pipefail
 export MSYS_NO_PATHCONV=1
 
@@ -27,6 +28,7 @@ focus() { "$ADB" shell dumpsys window | awk '/mCurrentFocus=/ && !d { print; d=1
   ${CLUE_FPS:+--es clue_fps "$CLUE_FPS"} \
   ${CLUE_BITRATE_KBPS:+--ei clue_bitrate_kbps "$CLUE_BITRATE_KBPS"} \
   ${CLUE_VIDEO_FORMAT:+--es clue_video_format "$CLUE_VIDEO_FORMAT"} \
+  ${CLUE_PRESENT:+--es clue_present "$CLUE_PRESENT"} \
   ${CLUE_PACING:+--es clue_pacing "$CLUE_PACING"} >/dev/null
 sleep 2
 # The app name is quoted again for the device shell, which splits arguments on spaces
