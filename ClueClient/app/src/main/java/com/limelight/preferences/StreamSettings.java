@@ -787,6 +787,20 @@ public class StreamSettings extends Activity {
                 }
             }
 
+            // CLUE: run the bitrate tuner for the last PC a stream was launched to
+            findPreference("clue_tuner_run").setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                @Override
+                public boolean onPreferenceClick(Preference preference) {
+                    String pc = new com.clue.tuner.TunerStore(getActivity()).lastPc();
+                    if (pc == null) {
+                        android.widget.Toast.makeText(getActivity(), R.string.tuner_settings_no_pc, android.widget.Toast.LENGTH_LONG).show();
+                    } else {
+                        startActivityForResult(com.clue.tuner.TunerOffer.intent(getActivity(), pc), CLUE_TUNER_REQUEST_CODE);
+                    }
+                    return true;
+                }
+            });
+
             // Add a listener to the FPS and resolution preference
             // so the bitrate can be auto-adjusted
             findPreference(PreferenceConfiguration.RESOLUTION_PREF_STRING).setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
@@ -862,10 +876,16 @@ public class StreamSettings extends Activity {
 
         // CLUE: from Artemis' StreamSettings
         private static final int READ_REQUEST_SPECIAL_CODE = 1002;
+        private static final int CLUE_TUNER_REQUEST_CODE = 1003; // CLUE: bitrate tuner
 
         @Override
         public void onActivityResult(int requestCode, int resultCode, Intent data) {
             super.onActivityResult(requestCode, resultCode, data);
+            if (requestCode == CLUE_TUNER_REQUEST_CODE && getActivity() instanceof StreamSettings) {
+                // The tuner may have written a new bitrate: show it
+                ((StreamSettings) getActivity()).reloadSettings();
+                return;
+            }
             if (requestCode == READ_REQUEST_SPECIAL_CODE && resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
                 try {
                     android.net.Uri uri = data.getData();

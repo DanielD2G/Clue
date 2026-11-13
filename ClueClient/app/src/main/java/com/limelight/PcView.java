@@ -126,6 +126,7 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
     private final static int FULL_APP_LIST_ID = 9;
     private final static int TEST_NETWORK_ID = 10;
     private final static int GAMESTREAM_EOL_ID = 11;
+    private final static int TEST_BITRATE_ID = 12; // CLUE: bitrate tuner
 
     private void initializeViews() {
         setContentView(R.layout.activity_launcher); // CLUE
@@ -560,6 +561,7 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
             }
 
             menu.add(Menu.NONE, FULL_APP_LIST_ID, 4, getResources().getString(R.string.pcview_menu_app_list));
+            menu.add(Menu.NONE, TEST_BITRATE_ID, 5, getResources().getString(R.string.tuner_menu)); // CLUE
         }
 
         menu.add(Menu.NONE, TEST_NETWORK_ID, 5, getResources().getString(R.string.pcview_menu_test_network));
@@ -852,6 +854,10 @@ public class PcView extends Activity { // CLUE: the launcher carousel replaces t
 
             case TEST_NETWORK_ID:
                 ServerHelper.doNetworkTest(PcView.this);
+                return true;
+
+            case TEST_BITRATE_ID: // CLUE: bitrate tuner
+                startActivity(com.clue.tuner.TunerOffer.intent(this, computer.details.uuid));
                 return true;
 
             case GAMESTREAM_EOL_ID:

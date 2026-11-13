@@ -29,6 +29,12 @@
             android:summary="@string/summary_seekbar_bitrate"
             android:text="@string/suffix_seekbar_bitrate_mbps"
             android:title="@string/title_seekbar_bitrate" />
+        <!-- CLUE: bitrate tuner for the last PC used -->
+        <Preference
+            android:key="clue_tuner_run"
+            android:persistent="false"
+            android:title="@string/tuner_settings_title"
+            android:summary="@string/tuner_settings_summary" />
         <ListPreference
             android:key="frame_pacing"
             android:title="@string/title_frame_pacing"

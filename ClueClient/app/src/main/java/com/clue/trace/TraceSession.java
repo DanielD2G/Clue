@@ -149,6 +149,13 @@ public final class TraceSession {
         return n;
     }
 
+    /** Ends the session without writing anything (bitrate tuner steps keep the trace in memory only). */
+    public void discard() {
+        if (current == this) {
+            current = null;
+        }
+    }
+
     public void stop() {
         if (current == this) {
             current = null;

@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- Clue bitrate test pattern (host side). Full-screen noise that changes completely every frame,
+     generated on the GPU, so the video encoder cannot compress it and the stream carries close to
+     the bitrate Clue asked for. Launched by the "Clue Bitrate Test" app that
+     tools/host/install-bitrate-test.ps1 adds to Vibepollo. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clue Bitrate Test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #label { position: absolute; left: 24px; bottom: 20px; color: #fff; font: 600 28px system-ui, sans-serif;
+           text-shadow: 0 0 6px #000; mix-blend-mode: difference; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="label">Clue · prueba de bitrate</div>
+<script>
+  const canvas = document.getElementById('c');
+  const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: false });
+  function resize() {
+    canvas.width = Math.round(window.innerWidth * devicePixelRatio);
+    canvas.height = Math.round(window.innerHeight * devicePixelRatio);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const vs = 'attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }';
+  // Per-pixel hash of (pixel, frame): every pixel changes every frame, in all three channels.
+  const fs = `
+    precision highp float;
+    uniform float frame;
+    float hash(vec3 p) {
+      p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+      p += dot(p, p.yzx + 19.19);
+      return fract((p.x + p.y) * p.z);
+    }
+    void main() {
+      vec2 px = floor(gl_FragCoord.xy);
+      gl_FragColor = vec4(hash(vec3(px, frame)), hash(vec3(px, frame + 17.0)), hash(vec3(px, frame + 39.0)), 1.0);
+    }`;
+  function compile(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const frameLoc = gl.getUniformLocation(prog, 'frame');
+
+  let frame = 0;
+  function draw() {
+    gl.uniform1f(frameLoc, (frame++ % 100000) * 1.618);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>

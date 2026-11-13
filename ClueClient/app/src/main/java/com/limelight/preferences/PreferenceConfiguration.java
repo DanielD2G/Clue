@@ -28,7 +28,7 @@ public class PreferenceConfiguration {
 
     static final String RESOLUTION_PREF_STRING = "list_resolution";
     static final String FPS_PREF_STRING = "list_fps";
-    static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps";
+    public static final String BITRATE_PREF_STRING = "seekbar_bitrate_kbps"; // CLUE: public for the bitrate tuner
     private static final String BITRATE_PREF_OLD_STRING = "seekbar_bitrate";
     private static final String STRETCH_PREF_STRING = "checkbox_stretch_video";
     private static final String SOPS_PREF_STRING = "checkbox_enable_sops";

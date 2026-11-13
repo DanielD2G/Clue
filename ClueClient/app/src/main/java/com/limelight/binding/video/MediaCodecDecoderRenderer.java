@@ -108,6 +108,57 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private VideoStats lastWindowVideoStats;
     private VideoStats globalVideoStats;
 
+    // CLUE: cumulative counters for the bitrate tuner. The VideoStats windows are flipped and
+    // merged once a second, so a read from another thread could double count a window; these
+    // only ever grow, each written by the thread that already updates its VideoStats twin.
+    private volatile int clueFramesReceived, clueFramesLost, clueFramesRendered;
+    private volatile long clueBytesReceived; // CLUE: video payload bytes, for the tuner's received bitrate
+
+    /** CLUE: video payload bytes received since the decoder started. */
+    public long clueBytesReceived() {
+        return clueBytesReceived;
+    }
+
+    /** CLUE: frames received, lost and rendered since the decoder started (off the hot path). */
+    public void clueStatsSnapshot(int[] out) {
+        out[0] = clueFramesReceived;
+        out[1] = clueFramesLost;
+        out[2] = clueFramesRendered;
+    }
+
+    /**
+     * CLUE: the bitrate ceiling (kbps) the active decoder declares for the active codec,
+     * or 0 when unknown (no stream yet, or the decoder does not say).
+     */
+    public int clueActiveDecoderMaxKbps() {
+        MediaCodecInfo info;
+        String mime;
+        if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
+            info = avcDecoder;
+            mime = "video/avc";
+        } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
+            info = hevcDecoder;
+            mime = "video/hevc";
+        } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0) {
+            info = av1Decoder;
+            mime = "video/av01";
+        } else {
+            return 0;
+        }
+        if (info == null) {
+            return 0;
+        }
+        try {
+            MediaCodecInfo.VideoCapabilities vc = info.getCapabilitiesForType(mime).getVideoCapabilities();
+            if (vc == null) {
+                return 0;
+            }
+            return vc.getBitrateRange().getUpper() / 1000;
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return 0;
+        }
+    }
+
     private long lastTimestampUs;
     private int lastFrameNumber;
     private long baseTimestampUs;
@@ -1070,6 +1121,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
                     lastRenderedFrameTimeNanos = frameTimeNanos;
                     activeWindowVideoStats.totalFramesRendered++;
+                    clueFramesRendered++; // CLUE: tuner counters
                 } catch (IllegalStateException ignored) {
                     try {
                         // Try to avoid leaking the output buffer by releasing it without rendering
@@ -1190,6 +1242,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                 }
 
                 activeWindowVideoStats.totalFramesRendered++;
+                clueFramesRendered++; // CLUE: tuner counters
 
                 // Add delta time to the totals (excluding probable outliers)
                 long delta = SystemClock.uptimeMillis() - (presentationTimeUs / 1000);
@@ -1301,6 +1354,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
                                 }
 
                                 activeWindowVideoStats.totalFramesRendered++;
+                                clueFramesRendered++; // CLUE: tuner counters
                             }
                             else {
                                 // For balanced frame pacing case, the Choreographer callback will handle rendering.
@@ -1706,6 +1760,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             // Don't bother if we're stopping
             return MoonBridge.DR_OK;
         }
+        clueBytesReceived += decodeUnitLength; // CLUE: tuner received bitrate (single writer)
 
         if (lastFrameNumber == 0) {
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
@@ -1713,6 +1768,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             // We can receive the same "frame" multiple times if it's an IDR frame.
             // In that case, each frame start NALU is submitted independently.
             activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
+            clueFramesLost += frameNumber - lastFrameNumber - 1; // CLUE: tuner counters
             activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
             activeWindowVideoStats.frameLossEvents++;
         }
@@ -1951,6 +2007,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
         activeWindowVideoStats.totalFramesReceived++;
         activeWindowVideoStats.totalFrames++;
+        clueFramesReceived++; // CLUE: tuner counters
 
         // CLUE: picture data for this frame was fully received (timestamps already CLOCK_MONOTONIC)
         com.clue.trace.FrameTrace clueTrace = com.clue.trace.TraceSession.activeFrames();
