@@ -5,10 +5,19 @@ import java.io.OutputStream;
 import java.io.StringReader;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
+
+import com.clue.net.LanPath;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -33,6 +42,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.os.Binder;
@@ -624,83 +635,184 @@ public class ComputerManagerService extends Service {
         tuple.pollingThread.start();
     }
 
+    // CLUE: shortest-path selection. Upstream polled local > manual > remote > IPv6 and took
+    // the first responder, so a routed address (for example the PC's home-LAN IP reached
+    // through a travel router's NAT) beat the direct one. Candidates are now ranked with
+    // on-link addresses first (LanPath.rank), and if none is on-link we probe the client's
+    // own subnet once per network for the same PC (probeOnLink).
     private ComputerDetails parallelPollPc(ComputerDetails details) throws InterruptedException {
-        ParallelPollTuple localInfo = new ParallelPollTuple(details.localAddress, details);
-        ParallelPollTuple manualInfo = new ParallelPollTuple(details.manualAddress, details);
-        ParallelPollTuple remoteInfo = new ParallelPollTuple(details.remoteAddress, details);
-        ParallelPollTuple ipv6Info = new ParallelPollTuple(details.ipv6Address, details);
+        List<LanPath.Subnet> onLink = getOnLinkSubnets();
+        List<ComputerDetails.AddressTuple> ranked = LanPath.rank(details.localAddress, details.lanAddresses,
+                details.manualAddress, details.remoteAddress, details.ipv6Address, onLink);
 
         // These must be started in order of precedence for the deduplication algorithm
         // to result in the correct behavior.
+        List<ParallelPollTuple> tuples = new ArrayList<>();
         HashSet<ComputerDetails.AddressTuple> uniqueAddresses = new HashSet<>();
-        startParallelPollThread(localInfo, uniqueAddresses);
-        startParallelPollThread(manualInfo, uniqueAddresses);
-        startParallelPollThread(remoteInfo, uniqueAddresses);
-        startParallelPollThread(ipv6Info, uniqueAddresses);
+        for (ComputerDetails.AddressTuple address : ranked) {
+            ParallelPollTuple tuple = new ParallelPollTuple(address, details);
+            startParallelPollThread(tuple, uniqueAddresses);
+            tuples.add(tuple);
+        }
 
+        ComputerDetails winner = null;
         try {
-            // Check local first
-            synchronized (localInfo) {
-                while (!localInfo.complete) {
-                    localInfo.wait();
-                }
+            for (ParallelPollTuple tuple : tuples) {
+                synchronized (tuple) {
+                    while (!tuple.complete) {
+                        tuple.wait();
+                    }
 
-                if (localInfo.returnedDetails != null) {
-                    localInfo.returnedDetails.activeAddress = localInfo.address;
-                    return localInfo.returnedDetails;
-                }
-            }
-
-            // Now manual
-            synchronized (manualInfo) {
-                while (!manualInfo.complete) {
-                    manualInfo.wait();
-                }
-
-                if (manualInfo.returnedDetails != null) {
-                    manualInfo.returnedDetails.activeAddress = manualInfo.address;
-                    return manualInfo.returnedDetails;
-                }
-            }
-
-            // Now remote IPv4
-            synchronized (remoteInfo) {
-                while (!remoteInfo.complete) {
-                    remoteInfo.wait();
-                }
-
-                if (remoteInfo.returnedDetails != null) {
-                    remoteInfo.returnedDetails.activeAddress = remoteInfo.address;
-                    return remoteInfo.returnedDetails;
-                }
-            }
-
-            // Now global IPv6
-            synchronized (ipv6Info) {
-                while (!ipv6Info.complete) {
-                    ipv6Info.wait();
-                }
-
-                if (ipv6Info.returnedDetails != null) {
-                    ipv6Info.returnedDetails.activeAddress = ipv6Info.address;
-                    return ipv6Info.returnedDetails;
+                    if (tuple.returnedDetails != null) {
+                        tuple.returnedDetails.activeAddress = tuple.address;
+                        winner = tuple.returnedDetails;
+                        break;
+                    }
                 }
             }
         } finally {
             // Stop any further polling if we've found a working address or we've been
             // interrupted by an attempt to stop polling.
-            localInfo.interrupt();
-            manualInfo.interrupt();
-            remoteInfo.interrupt();
-            ipv6Info.interrupt();
+            for (ParallelPollTuple tuple : tuples) {
+                tuple.interrupt();
+            }
         }
 
+        if (winner != null && LanPath.isOnLink(winner.activeAddress, onLink)) {
+            return winner;
+        }
+
+        // No on-link path: look for this PC directly on our own subnet
+        int port = winner != null ? winner.activeAddress.port :
+                (!ranked.isEmpty() ? ranked.get(0).port : NvHTTP.DEFAULT_HTTP_PORT);
+        ComputerDetails direct = probeOnLink(details, onLink, port);
+        return direct != null ? direct : winner;
+    }
+
+    // CLUE: networks already probed for each PC ("uuid@subnet"); cleared on network change
+    private final Set<String> probedNetworks = Collections.synchronizedSet(new HashSet<String>());
+    private static final int PROBE_CONNECT_TIMEOUT_MS = 400;
+
+    // CLUE: IPv4 subnets the active network is directly attached to
+    private List<LanPath.Subnet> getOnLinkSubnets() {
+        List<LanPath.Subnet> out = new ArrayList<>();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return out;
+        }
+        ConnectivityManager connMgr = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        Network active = connMgr.getActiveNetwork();
+        LinkProperties props = active != null ? connMgr.getLinkProperties(active) : null;
+        if (props == null) {
+            return out;
+        }
+        for (LinkAddress la : props.getLinkAddresses()) {
+            if (la.getAddress() instanceof Inet4Address && !la.getAddress().isLoopbackAddress()) {
+                LanPath.Subnet s = LanPath.Subnet.of(la.getAddress().getHostAddress(), la.getPrefixLength());
+                if (s != null) {
+                    out.add(s);
+                }
+            }
+        }
+        return out;
+    }
+
+    // CLUE: one TCP connect sweep of the client's /24 on the PC's HTTP port, then a
+    // serverinfo poll of each responder to confirm it is the same PC (UUID). Runs at most
+    // once per PC per network, only for known PCs and only on RFC 1918 subnets.
+    private ComputerDetails probeOnLink(ComputerDetails details, List<LanPath.Subnet> onLink, int port)
+            throws InterruptedException {
+        if (details.uuid == null) {
+            return null;
+        }
+        for (LanPath.Subnet subnet : onLink) {
+            if (!subnet.isPrivate() || !probedNetworks.add(details.uuid + "@" + subnet)) {
+                continue;
+            }
+
+            long start = SystemClock.elapsedRealtime();
+            List<String> responders = connectSweep(LanPath.probeTargets(subnet, subnet.address()), port);
+            LimeLog.info("Clue: on-link probe of " + subnet + ":" + port + " for " + details.name +
+                    " found " + responders + " in " + (SystemClock.elapsedRealtime() - start) + " ms");
+
+            for (String host : responders) {
+                ComputerDetails.AddressTuple address = new ComputerDetails.AddressTuple(host, port);
+                ComputerDetails polled = tryPollIp(details, address);
+                if (polled != null) {
+                    LimeLog.info("Clue: direct path to " + details.name + " at " + address);
+                    polled.activeAddress = address;
+                    polled.lanAddresses = LanPath.remember(polled.lanAddresses, address, LanPath.MAX_LAN_ADDRESSES);
+                    return polled;
+                }
+            }
+        }
         return null;
+    }
+
+    // CLUE: non-blocking connect to every target at once; returns those that accepted
+    private static List<String> connectSweep(List<String> hosts, int port) throws InterruptedException {
+        List<String> open = new ArrayList<>();
+        Selector selector = null;
+        List<SocketChannel> channels = new ArrayList<>();
+        try {
+            selector = Selector.open();
+            for (String host : hosts) {
+                try {
+                    SocketChannel ch = SocketChannel.open();
+                    ch.configureBlocking(false);
+                    channels.add(ch);
+                    if (ch.connect(new InetSocketAddress(InetAddress.getByName(host), port))) {
+                        open.add(host);
+                    } else {
+                        ch.register(selector, SelectionKey.OP_CONNECT, host);
+                    }
+                } catch (IOException ignored) {
+                    // Unreachable host or socket limit: skip it
+                }
+            }
+
+            long deadline = SystemClock.elapsedRealtime() + PROBE_CONNECT_TIMEOUT_MS;
+            long remaining;
+            while ((remaining = deadline - SystemClock.elapsedRealtime()) > 0 && !selector.keys().isEmpty()) {
+                if (Thread.interrupted()) {
+                    throw new InterruptedException();
+                }
+                selector.select(remaining);
+                for (SelectionKey key : selector.selectedKeys()) {
+                    SocketChannel ch = (SocketChannel) key.channel();
+                    try {
+                        if (ch.finishConnect()) {
+                            open.add((String) key.attachment());
+                        }
+                    } catch (IOException ignored) {
+                        // Refused or unreachable
+                    }
+                    key.cancel();
+                }
+                selector.selectedKeys().clear();
+                selector.selectNow(); // flush cancelled keys
+            }
+        } catch (IOException e) {
+            LimeLog.warning("Clue: on-link probe failed: " + e);
+        } finally {
+            for (SocketChannel ch : channels) {
+                try {
+                    ch.close();
+                } catch (IOException ignored) {
+                }
+            }
+            if (selector != null) {
+                try {
+                    selector.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+        return open;
     }
 
     private boolean pollComputer(ComputerDetails details) throws InterruptedException {
         // Poll all addresses in parallel to speed up the process
-        LimeLog.info("Starting parallel poll for "+details.name+" ("+details.localAddress +", "+details.remoteAddress +", "+details.manualAddress+", "+details.ipv6Address+")");
+        LimeLog.info("Starting parallel poll for "+details.name+" ("+details.localAddress +", "+details.remoteAddress +", "+details.manualAddress+", "+details.ipv6Address+", lan "+details.lanAddresses+")"); // CLUE: + lan
         ComputerDetails polledDetails = parallelPollPc(details);
         LimeLog.info("Parallel poll for "+details.name+" returned address: "+details.activeAddress);
 
@@ -744,6 +856,7 @@ public class ComputerManagerService extends Service {
                 @Override
                 public void onAvailable(Network network) {
                     LimeLog.info("Resetting PC state for new available network");
+                    probedNetworks.clear(); // CLUE: allow a fresh on-link probe on the new network
                     synchronized (pollingTuples) {
                         for (PollingTuple tuple : pollingTuples) {
                             tuple.computer.state = ComputerDetails.State.UNKNOWN;

@@ -80,6 +80,11 @@ public class ComputerDetails {
     // CLUE: Apollo server commands (from Artemis); null or empty on Sunshine/GFE
     public java.util.List<String> serverCommands;
 
+    // CLUE: every LAN address this PC has been seen at (most recent first, persisted).
+    // localAddress alone is overwritten by each poll, which loses the direct path on
+    // multi-homed hosts. See com.clue.net.LanPath.
+    public java.util.List<AddressTuple> lanAddresses = new java.util.ArrayList<>();
+
     public ComputerDetails() {
         // Use defaults
         state = State.UNKNOWN;
@@ -150,6 +155,18 @@ public class ComputerDetails {
         this.nvidiaServer = details.nvidiaServer;
         this.rawAppList = details.rawAppList;
         this.serverCommands = details.serverCommands; // CLUE
+
+        // CLUE: remember LAN addresses instead of only keeping the latest one
+        if (details.lanAddresses != null) {
+            for (int i = details.lanAddresses.size() - 1; i >= 0; i--) {
+                this.lanAddresses = com.clue.net.LanPath.remember(this.lanAddresses,
+                        details.lanAddresses.get(i), com.clue.net.LanPath.MAX_LAN_ADDRESSES);
+            }
+        }
+        if (details.localAddress != null) {
+            this.lanAddresses = com.clue.net.LanPath.remember(this.lanAddresses,
+                    details.localAddress, com.clue.net.LanPath.MAX_LAN_ADDRESSES);
+        }
     }
 
     @Override
