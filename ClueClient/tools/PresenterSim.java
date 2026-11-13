@@ -87,12 +87,13 @@ public class PresenterSim {
         if (v1 != null) {
             run("clue v1 (arrival PLL)", v1, frames, vsyncs, latchOffsetNs);
         }
-        // Each variant: safetyMs,hysteresisMs,marginPerMille
+        // Each variant: safetyMs,hysteresisMs,marginPerMille[,ready]  ("ready" turns keepIfReady on)
         for (String spec : System.getProperty("variants", "1.0,0.5,20").split(";")) {
             String[] p = spec.split(",");
+            boolean ready = p.length > 3 && "ready".equals(p[3]);
             PresentPolicy policy = new PresentPolicy((long) (Double.parseDouble(p[0]) * 1e6),
-                    (long) (Double.parseDouble(p[1]) * 1e6), Integer.parseInt(p[2]));
-            run("clue s=" + p[0] + " h=" + p[1] + " pm=" + p[2], new CluePresenter(policy), frames, vsyncs, latchOffsetNs);
+                    (long) (Double.parseDouble(p[1]) * 1e6), Integer.parseInt(p[2]), ready);
+            run("clue s=" + p[0] + " h=" + p[1] + " pm=" + p[2] + (ready ? " ready" : ""), new CluePresenter(policy), frames, vsyncs, latchOffsetNs);
         }
     }
 

@@ -2840,6 +2840,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             clueMeta.put("fps", String.valueOf(prefConfig.fps));
             clueMeta.put("bitrateKbps", String.valueOf(prefConfig.bitrate));
             clueMeta.put("framePacing", String.valueOf(prefConfig.framePacing));
+            clueMeta.put("present", android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
+                    .getString("clue_present", com.clue.video.PresentPolicy.DEFAULT_VARIANT));
             clueMeta.put("appVersion", com.limelight.BuildConfig.VERSION_NAME);
             int clueDropEvery = android.preference.PreferenceManager.getDefaultSharedPreferences(Game.this)
                     .getInt("clue_drop_every", 0);

@@ -20,6 +20,11 @@ package com.clue.video;
  * instead of a run of alternations. A frame never targets more than one vsync past the first one
  * it can reach, so SurfaceFlinger holds at most one frame of buffer.
  *
+ * With keepIfReady, "later immediately" applies only when the frame really cannot make its vsync:
+ * a frame already out of the decoder in time stays on it. Host timestamps jitter by a fraction of a
+ * period when the host captures from a display at a multiple of the stream rate, and following
+ * them moved frames that were ready (measured 2026-11-13, docs/measurements).
+ *
  * Targets sit half a period before the expected presentation time, because SurfaceFlinger latches a
  * buffer only when its desired present time is not after the vsync's expected present time.
  *
@@ -43,6 +48,7 @@ public final class PresentPolicy {
     private final long safetyNs;
     private final long hysteresisNs;
     private final int marginPerMille; // share of arrivals allowed past the margin, per 1000
+    private final boolean keepIfReady;
 
     // Vsync snapshot, written by onVsync() under the seqlock.
     private volatile long seq;
@@ -63,12 +69,49 @@ public final class PresentPolicy {
     private volatile long marginNs = INITIAL_MARGIN_NS;
     private volatile long remaps;
 
+    /**
+     * What the app uses unless a measurement script picks another variant. Measured on the TB323FU
+     * at 165 fps (docs/measurements/2026-11-13-presenter-keep-if-ready.md): 0.17% irregular
+     * intervals on screen against 1.2% for "base", for about 1.2 ms more latency.
+     */
+    public static final String DEFAULT_VARIANT = "ready-margin";
+
+    /**
+     * Presenter variants, picked at launch with {@code --es clue_present <name>}:
+     * "base" (0.5 ms safety, 95th percentile, the policy before 2026-11-13), "ready" (base plus
+     * keepIfReady) and "ready-margin" (1.5 ms safety, 99th percentile, keepIfReady). Null and
+     * unknown names give {@link #DEFAULT_VARIANT}.
+     */
+    public static PresentPolicy forVariant(String name) {
+        if ("base".equals(name)) {
+            return new PresentPolicy(DEFAULT_SAFETY_NS, DEFAULT_HYSTERESIS_NS, DEFAULT_MARGIN_PER_MILLE, false);
+        }
+        if ("ready".equals(name)) {
+            return new PresentPolicy(DEFAULT_SAFETY_NS, DEFAULT_HYSTERESIS_NS, DEFAULT_MARGIN_PER_MILLE, true);
+        }
+        return new PresentPolicy(1_500_000L, DEFAULT_HYSTERESIS_NS, 10, true);
+    }
+
+    /** Fixed time a frame must be out of the decoder before a vsync deadline to target it. */
+    public long safetyNs() {
+        return safetyNs;
+    }
+
     public PresentPolicy(long safetyNs, long hysteresisNs) {
         this(safetyNs, hysteresisNs, DEFAULT_MARGIN_PER_MILLE);
     }
 
     /** @param marginPerMille arrivals per 1000 allowed later than the margin (50 = 95th percentile) */
     public PresentPolicy(long safetyNs, long hysteresisNs, int marginPerMille) {
+        this(safetyNs, hysteresisNs, marginPerMille, false);
+    }
+
+    /**
+     * @param keepIfReady keep a frame on its expected vsync when it is already decoded in time for
+     *                    it, even if its host timestamp says it should move to a later one
+     */
+    public PresentPolicy(long safetyNs, long hysteresisNs, int marginPerMille, boolean keepIfReady) {
+        this.keepIfReady = keepIfReady;
         this.marginPerMille = marginPerMille;
         this.safetyNs = safetyNs;
         this.hysteresisNs = hysteresisNs;
@@ -113,6 +156,12 @@ public final class PresentPolicy {
             long step = Math.max(0, (hostNs - lastHostNs + period / 2) / period) * period;
             long expected = lastDeadlineNs + step;
             if (virtualArrival <= expected && virtualArrival > expected - period - hysteresisNs) {
+                chosen = expected;
+            } else if (keepIfReady && virtualArrival > expected && nowNs + safetyNs <= expected) {
+                // The host timestamp asks for a later vsync, but the frame is already out of the
+                // decoder in time for the one it follows. Host timestamps jitter by a fraction of
+                // a period (capture from a display at a multiple of the stream rate), and moving
+                // the frame would show the previous one twice for nothing.
                 chosen = expected;
             } else {
                 remaps++;

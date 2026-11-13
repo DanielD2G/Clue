@@ -228,4 +228,82 @@ public class PresentPolicyTest {
         assertEquals(PresentPolicy.INITIAL_MARGIN_NS, p.marginNs());
         assertEquals(P0 - HALF, p.targetFor(95_000_000L, 0));
     }
+
+    // ---- keep-if-ready (2026-11-13: host timestamp jitter on a 660 Hz virtual display) ----
+
+    /**
+     * Frames leave the decoder 2 ms before each deadline. Frame {@code jittered} carries a host
+     * timestamp 0.3 periods late (and the next one is back on the grid), as a host capturing from
+     * a display at a multiple of the stream rate does. Returns the gap in vsyncs between the
+     * targets of frame {@code jittered - 1} and {@code jittered}.
+     */
+    private static long gapAtHostTimestampJitter(PresentPolicy p, int jittered) {
+        p.onVsync(D0, P0, T);
+        long before = 0, at = 0;
+        for (int i = 0; i <= jittered + 20; i++) {
+            long host = i * T + (i == jittered ? 3 * T / 10 : 0);
+            long target = p.targetFor(D0 + i * T - 2_000_000L, host);
+            if (i == jittered - 1) before = target;
+            if (i == jittered) at = target;
+        }
+        return Math.round((double) (at - before) / T);
+    }
+
+    @Test
+    public void baselineDelaysAReadyFrameWhenItsHostTimestampIsLate() {
+        // Documents the behaviour keep-if-ready removes
+        assertEquals(2, gapAtHostTimestampJitter(new PresentPolicy(500_000L, 500_000L, 50, false), 200));
+    }
+
+    @Test
+    public void keepIfReadyDoesNotDelayAFrameAlreadyDecodedForItsVsync() {
+        assertEquals(1, gapAtHostTimestampJitter(new PresentPolicy(500_000L, 500_000L, 50, true), 200));
+    }
+
+    @Test
+    public void keepIfReadyKeepsCadenceAfterTheJitteredFrame() {
+        PresentPolicy p = new PresentPolicy(500_000L, 500_000L, 50, true);
+        p.onVsync(D0, P0, T);
+        long last = 0;
+        for (int i = 0; i < 260; i++) {
+            long host = i * T + (i == 200 ? 3 * T / 10 : 0);
+            long target = p.targetFor(D0 + i * T - 2_000_000L, host);
+            if (i >= 40) {
+                assertEquals("frame " + i, T, target - last);
+            }
+            last = target;
+        }
+    }
+
+    @Test
+    public void keepIfReadyStillMovesAFrameThatReallyIsLate() {
+        PresentPolicy p = new PresentPolicy(500_000L, 500_000L, 50, true);
+        p.onVsync(D0, P0, T);
+        long before = 0, at = 0;
+        for (int i = 0; i <= 200; i++) {
+            // Frame 200 is captured 3 ms late and leaves the decoder 1 ms after its deadline
+            long lateNs = i == 200 ? 3_000_000L : 0;
+            long target = p.targetFor(D0 + i * T - 2_000_000L + lateNs, i * T + lateNs);
+            if (i == 199) before = target;
+            if (i == 200) at = target;
+        }
+        assertEquals(2 * T, at - before);
+    }
+
+    @Test
+    public void variantsSelectKeepIfReady() {
+        assertEquals(2, gapAtHostTimestampJitter(PresentPolicy.forVariant("base"), 200));
+        assertEquals(1, gapAtHostTimestampJitter(PresentPolicy.forVariant("ready"), 200));
+        assertEquals(1, gapAtHostTimestampJitter(PresentPolicy.forVariant("ready-margin"), 200));
+    }
+
+    @Test
+    public void defaultVariantIsReadyMargin() {
+        // Measured 2026-11-13 on the TB323FU: 0.17% irregular intervals against 1.2% for "base"
+        assertEquals("ready-margin", PresentPolicy.DEFAULT_VARIANT);
+        assertEquals(1, gapAtHostTimestampJitter(PresentPolicy.forVariant(null), 200));
+        assertEquals(1, gapAtHostTimestampJitter(PresentPolicy.forVariant("nonsense"), 200));
+        assertEquals(1_500_000L, PresentPolicy.forVariant(null).safetyNs());
+        assertEquals(500_000L, PresentPolicy.forVariant("base").safetyNs());
+    }
 }
